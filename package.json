@@ -1,0 +1,18 @@
+{
+  "name": "tagent",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.12.1",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "clean": "turbo clean"
+  },
+  "devDependencies": {
+    "tsx": "^4.22.4",
+    "turbo": "^2.5.0",
+    "typescript": "^5.8.0"
+  }
+}
