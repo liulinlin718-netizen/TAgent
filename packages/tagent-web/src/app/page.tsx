@@ -2,7 +2,10 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import dynamic from 'next/dynamic';
 import styles from './page.module.css';
+
+const WorkflowPanel = dynamic(() => import('./WorkflowPanel'), { ssr: false });
 
 // ─── Types ───────────────────────────────────────────
 
@@ -137,7 +140,7 @@ export default function AppPage() {
     setMessages(prev => [...prev, userMsg, asstMsg]);
 
     try {
-      const response = await fetch(`${API}/api/agent/run`, {
+      const response = await fetch(`${API}/api/agent/orchestrate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, workspaceId: activeWsId, sessionId: activeSessId || undefined }),
@@ -206,6 +209,31 @@ export default function AppPage() {
         case 'governance':
           traces.push({ type: 'governance', data, timestamp: Date.now() });
           return { ...m, traces };
+        // Phase 2: Multi-Agent events
+        case 'task_decomposition':
+          traces.push({ type: 'task_decomposition', data, timestamp: Date.now() });
+          return { ...m, traces };
+        case 'agent_spawn':
+          traces.push({ type: 'agent_spawn', data, timestamp: Date.now() });
+          return { ...m, traces };
+        case 'agent_progress':
+          traces.push({ type: 'agent_progress', data, timestamp: Date.now() });
+          return { ...m, traces };
+        case 'agent_tool_call':
+          traces.push({ type: 'agent_tool_call', data, timestamp: Date.now() });
+          return { ...m, traces };
+        case 'agent_tool_result':
+          traces.push({ type: 'agent_tool_result', data, timestamp: Date.now() });
+          return { ...m, traces };
+        case 'agent_complete':
+          traces.push({ type: 'agent_complete', data, timestamp: Date.now() });
+          return { ...m, traces };
+        case 'agent_failed':
+          traces.push({ type: 'agent_failed', data, timestamp: Date.now() });
+          return { ...m, traces };
+        case 'synthesis_start':
+          traces.push({ type: 'synthesis_start', data: {}, timestamp: Date.now() });
+          return { ...m, traces };
         case 'text_delta':
           return { ...m, content: m.content + (data.text as string) };
         case 'complete':
@@ -250,14 +278,16 @@ export default function AppPage() {
             <div className={styles.sidebarSection}>
               <div className={styles.sectionTitle}>📋 常驻 Agent</div>
               <div className={styles.agentList}>
-                {['🔍 研究助手'].map(name => (
-                  <div key={name} className={styles.agentItem}>
+                {[
+                  { icon: '🔍', name: '研究助手' },
+                  { icon: '📄', name: '文档助手' },
+                  { icon: '📊', name: '数据分析' },
+                ].map(a => (
+                  <div key={a.name} className={styles.agentItem}>
                     <span className={styles.agentDot} />
-                    {name}
+                    <span>{a.icon} {a.name}</span>
                   </div>
                 ))}
-                <div className={styles.agentItemMuted}>📄 文档助手 (Phase 2)</div>
-                <div className={styles.agentItemMuted}>📊 数据分析 (Phase 2)</div>
               </div>
             </div>
 
@@ -305,7 +335,7 @@ export default function AppPage() {
 
             {/* 快捷操作 */}
             <div className={styles.sidebarFooter}>
-              <div className={styles.badge}>Phase 1 MVP</div>
+              <div className={styles.badge}>Phase 2</div>
             </div>
           </>
         )}
@@ -321,7 +351,7 @@ export default function AppPage() {
           </div>
           <div className={styles.headerRight}>
             <div className={styles.statusDot} />
-            <span className={styles.statusText}>Research Agent</span>
+            <span className={styles.statusText}>Orchestrator</span>
           </div>
         </header>
 
@@ -336,7 +366,7 @@ export default function AppPage() {
               <h1 className={styles.welcomeTitle}>TAgent</h1>
               <p className={styles.welcomeSubtitle}>AI 办公协作助手 — 让 Agent 为你工作</p>
               <div className={styles.suggestions}>
-                {['帮我调研支付 agent 的现状', '搜索最新的 AI Agent 框架', '了解 MCP 协议的发展'].map(s => (
+                {['帮我做一份支付Agent竞品分析报告', '搜索最新的 AI Agent 框架', '了解 MCP 协议的发展'].map(s => (
                   <button key={s} className={styles.suggestion}
                     onClick={() => { setInput(s); inputRef.current?.focus(); }}
                   >{s}</button>
@@ -344,6 +374,17 @@ export default function AppPage() {
               </div>
             </div>
           )}
+
+          {/* React Flow 工作流看板 (plan §4.3) */}
+          {messages.length > 0 && (() => {
+            const lastAssistant = messages.filter(m => m.role === 'assistant').slice(-1)[0];
+            if (!lastAssistant) return null;
+            const hasOrchestration = lastAssistant.traces.some(t =>
+              t.type === 'task_decomposition' || t.type === 'agent_spawn'
+            );
+            if (!hasOrchestration) return null;
+            return <WorkflowPanel traces={lastAssistant.traces} isRunning={isRunning} />;
+          })()}
 
           <AnimatePresence>
             {messages.map(msg => (
@@ -407,6 +448,15 @@ function TraceItem({ trace }: { trace: TraceEvent }) {
     tool_call: { icon: '🔧', label: `调用 ${trace.data.tool}` },
     tool_result: { icon: '✅', label: `${trace.data.tool} 返回 ${trace.data.resultLength} 字符` },
     governance: { icon: '🛡️', label: `治理: ${trace.data.message}` },
+    // Phase 2: Multi-Agent events
+    task_decomposition: { icon: '🧩', label: `任务分解为 ${(trace.data.tasks as unknown[])?.length || '?'} 个子任务` },
+    agent_spawn: { icon: '🚀', label: `${trace.data.icon || '⚡'} ${trace.data.agentName}: ${(trace.data.objective as string)?.slice(0, 40)}...` },
+    agent_progress: { icon: '⏳', label: `${trace.data.agentId} 迭代 #${trace.data.iteration}` },
+    agent_tool_call: { icon: '🔧', label: `${trace.data.agentId} → ${trace.data.tool}` },
+    agent_tool_result: { icon: '✅', label: `${trace.data.agentId}: ${trace.data.tool} 返回 ${trace.data.resultLength} 字符` },
+    agent_complete: { icon: '✨', label: `${trace.data.agentId} 完成 ($${(trace.data.cost as number)?.toFixed(4) || '?'})` },
+    agent_failed: { icon: '❌', label: `${trace.data.agentId} 失败` },
+    synthesis_start: { icon: '📝', label: '正在综合各 Agent 报告...' },
   };
   const { icon, label } = map[trace.type] || { icon: '•', label: trace.type };
 

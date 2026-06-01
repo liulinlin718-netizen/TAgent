@@ -22,10 +22,15 @@ import {
   TraceWriter,
   createWebSearchTool,
   createUrlReaderTool,
+  runOrchestrator,
+  AgentPool,
 } from '@tagent/core';
-import type { LoopEventHandler } from '@tagent/core';
+import type { LoopEventHandler, OrchestratorEventHandler } from '@tagent/core';
 import { store } from './store.js';
 import type { ChatMessage, TraceEvent } from './store.js';
+
+// Phase 2: 常驻 Agent 池
+const agentPool = new AgentPool();
 
 // ─── Config ──────────────────────────────────────────
 
@@ -279,6 +284,122 @@ app.post('/api/agent/run', async (c) => {
           }),
         });
       }
+    } catch (error) {
+      await stream.writeSSE({
+        event: 'error',
+        data: JSON.stringify({ message: error instanceof Error ? error.message : String(error) }),
+      });
+    }
+  });
+});
+
+// ─── Agent Pool API (Phase 2) ────────────────────────
+
+app.get('/api/agents', (c) => {
+  return c.json({ agents: agentPool.getAllAgents() });
+});
+
+app.get('/api/agents/resident', (c) => {
+  return c.json({ agents: agentPool.getResidentAgents() });
+});
+
+app.get('/api/agents/:id', (c) => {
+  const agent = agentPool.getAgent(c.req.param('id'));
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+  return c.json(agent);
+});
+
+// ─── Orchestrate API (Phase 2: Multi-Agent SSE) ──────
+
+app.post('/api/agent/orchestrate', async (c) => {
+  const body = await c.req.json<RunRequest>();
+  const { message } = body;
+  if (!message) return c.json({ error: 'message is required' }, 400);
+
+  let wsId = body.workspaceId;
+  let sessId = body.sessionId;
+
+  if (!wsId) {
+    const workspaces = store.listWorkspaces();
+    wsId = workspaces[0]?.id;
+    if (!wsId) { wsId = store.createWorkspace('默认工作空间').id; }
+  }
+  if (!sessId) {
+    const session = store.createSession(wsId, message.slice(0, 30));
+    sessId = session?.id || `sess-${Date.now()}`;
+  }
+
+  store.addMessage(wsId, sessId, {
+    id: `msg-${Date.now()}-u`, role: 'user', content: message, timestamp: new Date().toISOString(),
+  });
+
+  const { provider, model } = createProvider();
+
+  return streamSSE(c, async (stream) => {
+    await stream.writeSSE({ event: 'session', data: JSON.stringify({ workspaceId: wsId, sessionId: sessId }) });
+
+    const traces: TraceEvent[] = [];
+
+    const events: OrchestratorEventHandler = {
+      onTaskDecomposition: (tasks) => {
+        const evt = { type: 'task_decomposition', data: { tasks } as Record<string, unknown>, timestamp: Date.now() };
+        traces.push(evt);
+        stream.writeSSE({ event: 'task_decomposition', data: JSON.stringify({ tasks }) });
+      },
+      onAgentSpawned: (agent, task) => {
+        const evt = { type: 'agent_spawn', data: { agentId: agent.id, agentName: agent.name, icon: agent.icon, taskId: task.id, objective: task.objective } as Record<string, unknown>, timestamp: Date.now() };
+        traces.push(evt);
+        stream.writeSSE({ event: 'agent_spawn', data: JSON.stringify(evt.data) });
+      },
+      onAgentProgress: (agentId, iteration) => {
+        const evt = { type: 'agent_progress', data: { agentId, iteration } as Record<string, unknown>, timestamp: Date.now() };
+        traces.push(evt);
+        stream.writeSSE({ event: 'agent_progress', data: JSON.stringify({ agentId, iteration }) });
+      },
+      onAgentToolCall: (agentId, tool, args) => {
+        stream.writeSSE({ event: 'agent_tool_call', data: JSON.stringify({ agentId, tool, args }) });
+      },
+      onAgentToolResult: (agentId, tool, resultLength) => {
+        stream.writeSSE({ event: 'agent_tool_result', data: JSON.stringify({ agentId, tool, resultLength }) });
+      },
+      onAgentComplete: (agentId, result) => {
+        const evt = { type: 'agent_complete', data: { agentId, success: result.success, iterations: result.iterations, cost: result.totalCost } as Record<string, unknown>, timestamp: Date.now() };
+        traces.push(evt);
+        stream.writeSSE({ event: 'agent_complete', data: JSON.stringify(evt.data) });
+      },
+      onAgentFailed: (agentId, error) => {
+        stream.writeSSE({ event: 'agent_failed', data: JSON.stringify({ agentId, error }) });
+      },
+      onGovernanceEvent: (agentId, event) => {
+        const evt = { type: 'governance', data: { agentId, ...event } as Record<string, unknown>, timestamp: Date.now() };
+        traces.push(evt);
+        stream.writeSSE({ event: 'governance', data: JSON.stringify({ agentId, ...event }) });
+      },
+      onSynthesisStart: () => {
+        stream.writeSSE({ event: 'synthesis_start', data: '{}' });
+      },
+      onTextDelta: (text) => {
+        stream.writeSSE({ event: 'text_delta', data: JSON.stringify({ text }) });
+      },
+      onComplete: (result) => {
+        store.addMessage(wsId!, sessId!, {
+          id: `msg-${Date.now()}-a`, role: 'assistant', content: result.output,
+          timestamp: new Date().toISOString(), traces,
+          cost: result.totalCost, tokens: result.totalTokens, iterations: result.subResults.length,
+        });
+        stream.writeSSE({
+          event: 'complete',
+          data: JSON.stringify({
+            success: result.success, output: result.output, subResults: result.subResults,
+            totalCost: result.totalCost, totalTokens: result.totalTokens,
+            workspaceId: wsId, sessionId: sessId,
+          }),
+        });
+      },
+    };
+
+    try {
+      await runOrchestrator({ provider, model, maxTotalCost: 1.0 }, message, events);
     } catch (error) {
       await stream.writeSSE({
         event: 'error',

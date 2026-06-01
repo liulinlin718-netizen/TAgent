@@ -25,3 +25,24 @@ export { createUrlReaderTool } from './tools/url-reader.js';
 // Explore
 export { runExplore } from './explore.js';
 export type { ExploreResult, ExploreConfig } from './explore.js';
+
+// Phase 2: Protocol (plan §3.7)
+export { MessageBus } from './protocol.js';
+export type {
+  AgentMessage, AgentMessageType,
+  TaskRequestPayload, TaskProgressPayload, TaskCompletePayload, TaskFailedPayload,
+  GovernanceEventPayload, HumanInputRequestPayload,
+} from './protocol.js';
+
+// Phase 2: Agent Card + Pool (plan §3.2, §3.5)
+export { createAgentCard, createIdleState, createBusyState, createOrchestrationState } from './agent-card.js';
+export type { AgentCard, AgentState, ApprovalMode } from './agent-card.js';
+export { AgentPool, AGENT_SOULS } from './agent-pool.js';
+
+// Phase 2: Governance (plan §3.10)
+export { GovernanceEngine } from './governance.js';
+export type { GovernanceRule, GovernanceContext, GovernanceResult, GovernanceTemplate } from './governance.js';
+
+// Phase 2: Orchestrator (plan §3.4)
+export { runOrchestrator } from './orchestrator.js';
+export type { OrchestratorConfig, OrchestratorResult, OrchestratorEventHandler, SubTask } from './orchestrator.js';
