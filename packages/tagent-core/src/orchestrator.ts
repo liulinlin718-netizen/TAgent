@@ -287,7 +287,7 @@ async function executeSubAgent(
       tools,
       traceWriter,
       costTracker: localCostTracker,
-      maxIterations: 12,  // 研究任务需要足够迭代（search+read+analyze 循环）
+      maxIterations: 8,  // 3次搜索 + 1次read + 输出 = ~5, 留3次余量
       maxCostPerTask: agentCard.constraints.maxCostPerTask,
       allowedTools: agentCard.constraints.allowedTools, // ← 治理安全协议
     },
