@@ -18,6 +18,7 @@ import type { LLMProvider, LLMResponse, Message, ToolDefinition, ToolCall } from
 import { CostTracker } from '@tagent/ai';
 import { TraceWriter, type TraceSpan, type TraceEntry } from './trace.js';
 import { ToolRegistry } from './tools/registry.js';
+import { GovernanceEngine, type GovernanceContext } from './governance.js';
 
 // ─── Types ───────────────────────────────────────────
 
@@ -32,6 +33,8 @@ export interface AgentConfig {
   costTracker: CostTracker;
   maxIterations?: number;
   maxCostPerTask?: number; // USD — 治理资源协议
+  /** 工具白名单（治理安全协议 §3.10）— 不在此列表中的工具将被拦截 */
+  allowedTools?: string[];
 }
 
 export interface AgentLoopResult {
@@ -87,7 +90,11 @@ export async function runAgentLoop(
     costTracker,
     maxIterations = 15,
     maxCostPerTask = 1.0,
+    allowedTools,
   } = config;
+
+  // 治理引擎实例（plan §3.4 步骤④ Hook）
+  const governance = new GovernanceEngine('standard');
 
   const sessionId = `sess-${Date.now()}`;
   const traceId = `tr-${Date.now()}`;
@@ -160,29 +167,51 @@ export async function runAgentLoop(
       events?.onTextDelta?.(response.content);
     }
 
-    // ④ GOVERNANCE CHECK — 治理检查点
-    if (costTracker.isOverBudget(maxCostPerTask)) {
-      const govMsg = `⚠️ 成本已超过预算上限 ($${maxCostPerTask})。当前累计: $${costTracker.totalCost.toFixed(4)}`;
-      writeTrace(traceWriter, traceId, agentId, sessionId, lastSnapshot.id, {
-        type: 'governance_check',
-        timestamp: new Date().toISOString(),
-        policy: 'resource_budget',
-        result: 'blocked',
-        summary: govMsg,
-      });
-      events?.onGovernance?.({ type: 'budget_exceeded', message: govMsg });
-
-      return {
-        success: false,
-        output: `${response.content}\n\n${govMsg}`,
-        iterations: iteration,
-        totalCost: costTracker.totalCost,
-        totalTokens: costTracker.totalTokens,
-        traceFile: traceWriter.getPath(),
+    // ④ GOVERNANCE CHECK — 治理检查点（plan §3.4 §3.10）
+    // 每次迭代后先进行全局治理检查（预算+迭代次数）
+    {
+      const govCtx: GovernanceContext = {
+        agentId,
+        currentCost: costTracker.totalCost,
+        maxCost: maxCostPerTask,
+        currentIterations: iteration,
+        maxIterations,
+        approvalMode: 'full_auto',
       };
+      const govResult = governance.evaluate(govCtx);
+
+      // 发送所有警告事件
+      for (const r of govResult.results) {
+        if (r.event.result === 'warning') {
+          events?.onGovernance?.({ type: r.event.policyType, message: r.event.message });
+          writeTrace(traceWriter, traceId, agentId, sessionId, lastSnapshot.id, {
+            type: 'governance_check', timestamp: new Date().toISOString(),
+            policy: r.event.policyType, result: 'warning', summary: r.event.message,
+          });
+        }
+      }
+
+      // 硬约束拦截
+      if (!govResult.allPassed) {
+        const blocker = govResult.blockers[0];
+        writeTrace(traceWriter, traceId, agentId, sessionId, lastSnapshot.id, {
+          type: 'governance_check', timestamp: new Date().toISOString(),
+          policy: blocker.event.policyType, result: 'blocked', summary: blocker.event.message,
+        });
+        events?.onGovernance?.({ type: blocker.event.policyType, message: blocker.event.message });
+
+        return {
+          success: false,
+          output: `${response.content}\n\n⚠️ 治理拦截: ${blocker.event.message}`,
+          iterations: iteration,
+          totalCost: costTracker.totalCost,
+          totalTokens: costTracker.totalTokens,
+          traceFile: traceWriter.getPath(),
+        };
+      }
     }
 
-    // ③ EXECUTE — 如果有工具调用，执行工具
+    // ③ EXECUTE — 如果有工具调用，先治理检查每个工具，再执行
     if (response.stopReason === 'tool_use' && response.toolCalls.length > 0) {
       // Add assistant message with tool calls to conversation
       messages.push({
@@ -194,6 +223,26 @@ export async function runAgentLoop(
       // Execute each tool call
       for (const toolCall of response.toolCalls) {
         const toolArgs = JSON.parse(toolCall.arguments) as Record<string, unknown>;
+
+        // ④ 工具级治理检查：白名单 (plan §3.10 安全协议)
+        if (allowedTools && !allowedTools.includes(toolCall.name)) {
+          const blockMsg = `🛡️ 工具 "${toolCall.name}" 未在白名单中，已被治理引擎拦截。允许的工具: ${allowedTools.join(', ')}`;
+          writeTrace(traceWriter, traceId, agentId, sessionId, lastSnapshot.id, {
+            type: 'governance_check', timestamp: new Date().toISOString(),
+            policy: 'tool_whitelist', result: 'blocked',
+            summary: blockMsg, tool: toolCall.name,
+          });
+          events?.onGovernance?.({ type: 'tool_blocked', message: blockMsg });
+
+          // 向 LLM 返回拦截消息，让它知道该工具不可用
+          messages.push({
+            role: 'tool',
+            content: blockMsg,
+            toolCallId: toolCall.id,
+          });
+          continue;
+        }
+
         events?.onToolCall?.(toolCall.name, toolArgs);
 
         writeTrace(traceWriter, traceId, agentId, sessionId, lastSnapshot.id, {

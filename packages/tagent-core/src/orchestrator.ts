@@ -36,6 +36,8 @@ export interface OrchestratorConfig {
   provider: LLMProvider;
   model: string;
   maxTotalCost?: number;
+  /** 外部 AgentPool 单例（服务器级别共享） */
+  agentPool?: AgentPool;
 }
 
 export interface SubTask {
@@ -74,8 +76,8 @@ export async function runOrchestrator(
   userMessage: string,
   events?: OrchestratorEventHandler,
 ): Promise<OrchestratorResult> {
-  const { provider, model, maxTotalCost = 1.0 } = config;
-  const pool = new AgentPool();
+  const { provider, model, maxTotalCost = 1.0, agentPool: externalPool } = config;
+  const pool = externalPool || new AgentPool();
   const bus = new MessageBus();
   const governance = new GovernanceEngine('standard');
   const globalCostTracker = new CostTracker();
@@ -278,6 +280,7 @@ async function executeSubAgent(
       costTracker: localCostTracker,
       maxIterations: 6,
       maxCostPerTask: agentCard.constraints.maxCostPerTask,
+      allowedTools: agentCard.constraints.allowedTools, // ← 治理安全协议
     },
     task.objective,
     loopEvents,

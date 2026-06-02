@@ -14,18 +14,14 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { streamSSE } from 'hono/streaming';
-import { AnthropicProvider, CostTracker } from '@tagent/ai';
+import { AnthropicProvider } from '@tagent/ai';
 import type { LLMProvider } from '@tagent/ai';
 import {
-  runAgentLoop,
-  ToolRegistry,
-  TraceWriter,
-  createWebSearchTool,
-  createUrlReaderTool,
   runOrchestrator,
   AgentPool,
+  TraceWriter,
 } from '@tagent/core';
-import type { LoopEventHandler, OrchestratorEventHandler } from '@tagent/core';
+import type { OrchestratorEventHandler } from '@tagent/core';
 import { store } from './store.js';
 import type { ChatMessage, TraceEvent } from './store.js';
 
@@ -123,7 +119,16 @@ app.get('/api/workspaces/:wsId/sessions/:sessId', (c) => {
   return c.json(session);
 });
 
-// ─── Agent Run (SSE Stream) ──────────────────────────
+// Fix 4: Session 删除 API (Gap 3)
+app.delete('/api/workspaces/:wsId/sessions/:sessId', (c) => {
+  const deleted = store.deleteSession(c.req.param('wsId'), c.req.param('sessId'));
+  if (!deleted) return c.json({ error: 'Session not found' }, 404);
+  return c.json({ ok: true });
+});
+
+// ─── Agent Run (Fix 5: 统一走 Orchestrator) ──────────
+// 保留旧端点兼容性，内部转发到 /api/agent/orchestrate
+// 简单任务由 orchestrator 自动降级为单 Agent 模式
 
 interface RunRequest {
   message: string;
@@ -132,158 +137,93 @@ interface RunRequest {
 }
 
 app.post('/api/agent/run', async (c) => {
+  // 直接复用 orchestrate 端点的完整流程
   const body = await c.req.json<RunRequest>();
   const { message } = body;
-
   if (!message) return c.json({ error: 'message is required' }, 400);
 
-  // 获取或创建 workspace/session
   let wsId = body.workspaceId;
   let sessId = body.sessionId;
 
   if (!wsId) {
     const workspaces = store.listWorkspaces();
     wsId = workspaces[0]?.id;
-    if (!wsId) {
-      const ws = store.createWorkspace('默认工作空间');
-      wsId = ws.id;
-    }
+    if (!wsId) { wsId = store.createWorkspace('默认工作空间').id; }
   }
-
   if (!sessId) {
     const session = store.createSession(wsId, message.slice(0, 30));
     sessId = session?.id || `sess-${Date.now()}`;
   }
 
-  // 记录用户消息
   store.addMessage(wsId, sessId, {
-    id: `msg-${Date.now()}-u`,
-    role: 'user',
-    content: message,
-    timestamp: new Date().toISOString(),
+    id: `msg-${Date.now()}-u`, role: 'user', content: message, timestamp: new Date().toISOString(),
   });
 
   const { provider, model } = createProvider();
-  const tools = new ToolRegistry();
-  tools.register(createWebSearchTool());
-  tools.register(createUrlReaderTool());
-
-  const traceWriter = new TraceWriter(`./traces/${sessId}.jsonl`);
-  const costTracker = new CostTracker();
 
   return streamSSE(c, async (stream) => {
-    // 发送 session 信息
-    await stream.writeSSE({
-      event: 'session',
-      data: JSON.stringify({ workspaceId: wsId, sessionId: sessId }),
-    });
+    await stream.writeSSE({ event: 'session', data: JSON.stringify({ workspaceId: wsId, sessionId: sessId }) });
 
     const traces: TraceEvent[] = [];
 
-    const events: LoopEventHandler = {
-      onIteration: (i) => {
-        const evt = { type: 'iteration', data: { iteration: i }, timestamp: Date.now() };
-        traces.push(evt);
-        stream.writeSSE({ event: 'iteration', data: JSON.stringify({ iteration: i }) });
+    const events: OrchestratorEventHandler = {
+      onTaskDecomposition: (tasks) => {
+        traces.push({ type: 'task_decomposition', data: { tasks } as Record<string, unknown>, timestamp: Date.now() });
+        stream.writeSSE({ event: 'task_decomposition', data: JSON.stringify({ tasks }) });
       },
-      onToolCall: (tool, args) => {
-        const evt = { type: 'tool_call', data: { tool, args }, timestamp: Date.now() };
-        traces.push(evt);
-        stream.writeSSE({ event: 'tool_call', data: JSON.stringify({ tool, args }) });
+      onAgentSpawned: (agent, task) => {
+        const d = { agentId: agent.id, agentName: agent.name, icon: agent.icon, taskId: task.id, objective: task.objective };
+        traces.push({ type: 'agent_spawn', data: d as Record<string, unknown>, timestamp: Date.now() });
+        stream.writeSSE({ event: 'agent_spawn', data: JSON.stringify(d) });
       },
-      onToolResult: (tool, result) => {
-        const evt = {
-          type: 'tool_result',
-          data: { tool, resultLength: result.length, preview: result.slice(0, 200) },
-          timestamp: Date.now(),
-        };
-        traces.push(evt);
-        stream.writeSSE({ event: 'tool_result', data: JSON.stringify(evt.data) });
+      onAgentProgress: (agentId, iteration) => {
+        traces.push({ type: 'agent_progress', data: { agentId, iteration } as Record<string, unknown>, timestamp: Date.now() });
+        stream.writeSSE({ event: 'agent_progress', data: JSON.stringify({ agentId, iteration }) });
+      },
+      onAgentToolCall: (agentId, tool, args) => {
+        traces.push({ type: 'agent_tool_call', data: { agentId, tool, args } as Record<string, unknown>, timestamp: Date.now() });
+        stream.writeSSE({ event: 'agent_tool_call', data: JSON.stringify({ agentId, tool, args }) });
+      },
+      onAgentToolResult: (agentId, tool, resultLength) => {
+        stream.writeSSE({ event: 'agent_tool_result', data: JSON.stringify({ agentId, tool, resultLength }) });
+      },
+      onAgentComplete: (agentId, result) => {
+        const d = { agentId, success: result.success, iterations: result.iterations, cost: result.totalCost };
+        traces.push({ type: 'agent_complete', data: d as Record<string, unknown>, timestamp: Date.now() });
+        stream.writeSSE({ event: 'agent_complete', data: JSON.stringify(d) });
+      },
+      onAgentFailed: (agentId, error) => {
+        stream.writeSSE({ event: 'agent_failed', data: JSON.stringify({ agentId, error }) });
+      },
+      onGovernanceEvent: (agentId, event) => {
+        traces.push({ type: 'governance', data: { agentId, ...event } as Record<string, unknown>, timestamp: Date.now() });
+        stream.writeSSE({ event: 'governance', data: JSON.stringify({ agentId, ...event }) });
+      },
+      onSynthesisStart: () => {
+        stream.writeSSE({ event: 'synthesis_start', data: '{}' });
       },
       onTextDelta: (text) => {
         stream.writeSSE({ event: 'text_delta', data: JSON.stringify({ text }) });
       },
-      onGovernance: (event) => {
-        const evt = { type: 'governance', data: event as Record<string, unknown>, timestamp: Date.now() };
-        traces.push(evt);
-        stream.writeSSE({ event: 'governance', data: JSON.stringify(event) });
-      },
       onComplete: (result) => {
-        // 保存 assistant 消息到 session
         store.addMessage(wsId!, sessId!, {
-          id: `msg-${Date.now()}-a`,
-          role: 'assistant',
-          content: result.output,
-          timestamp: new Date().toISOString(),
-          traces,
-          cost: result.totalCost,
-          tokens: result.totalTokens,
-          iterations: result.iterations,
+          id: `msg-${Date.now()}-a`, role: 'assistant', content: result.output,
+          timestamp: new Date().toISOString(), traces,
+          cost: result.totalCost, tokens: result.totalTokens, iterations: result.subResults.length,
         });
-
         stream.writeSSE({
           event: 'complete',
           data: JSON.stringify({
-            success: result.success,
-            output: result.output,
-            iterations: result.iterations,
-            totalCost: result.totalCost,
-            totalTokens: result.totalTokens,
-            workspaceId: wsId,
-            sessionId: sessId,
+            success: result.success, output: result.output, subResults: result.subResults,
+            totalCost: result.totalCost, totalTokens: result.totalTokens,
+            workspaceId: wsId, sessionId: sessId,
           }),
         });
       },
     };
 
     try {
-      const result = await runAgentLoop(
-        {
-          id: 'research-agent',
-          name: 'Research Agent',
-          systemPrompt: `你是 TAgent 的研究助手。帮助用户进行调研和信息收集。
-
-可用工具：
-- web_search: 搜索互联网
-- read_url: 读取网页内容
-
-工作流程：先搜索 → 找有价值链接 → 深入阅读 → 生成结构化报告。
-报告用清晰的中文标题和子标题，列出关键发现和信息来源。
-每次只调用一个工具。`,
-          provider,
-          model,
-          tools,
-          traceWriter,
-          costTracker,
-          maxIterations: 10,
-          maxCostPerTask: 0.5,
-        },
-        message,
-        events,
-      );
-
-      if (!result.success && result.output) {
-        store.addMessage(wsId, sessId, {
-          id: `msg-${Date.now()}-a`,
-          role: 'assistant',
-          content: result.output,
-          timestamp: new Date().toISOString(),
-          traces,
-          cost: result.totalCost,
-          tokens: result.totalTokens,
-          iterations: result.iterations,
-        });
-        await stream.writeSSE({
-          event: 'complete',
-          data: JSON.stringify({
-            success: false,
-            output: result.output,
-            iterations: result.iterations,
-            totalCost: result.totalCost,
-            totalTokens: result.totalTokens,
-          }),
-        });
-      }
+      await runOrchestrator({ provider, model, maxTotalCost: 1.0, agentPool }, message, events);
     } catch (error) {
       await stream.writeSSE({
         event: 'error',
@@ -399,7 +339,7 @@ app.post('/api/agent/orchestrate', async (c) => {
     };
 
     try {
-      await runOrchestrator({ provider, model, maxTotalCost: 1.0 }, message, events);
+      await runOrchestrator({ provider, model, maxTotalCost: 1.0, agentPool }, message, events);
     } catch (error) {
       await stream.writeSSE({
         event: 'error',

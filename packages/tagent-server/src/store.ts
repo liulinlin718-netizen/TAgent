@@ -146,6 +146,16 @@ class Store {
     );
   }
 
+  deleteSession(workspaceId: string, sessionId: string): boolean {
+    const ws = this.workspaces.get(workspaceId);
+    if (!ws) return false;
+    const idx = ws.sessions.findIndex(s => s.id === sessionId);
+    if (idx === -1) return false;
+    ws.sessions.splice(idx, 1);
+    ws.updatedAt = new Date().toISOString();
+    return true;
+  }
+
   addMessage(workspaceId: string, sessionId: string, msg: ChatMessage): void {
     const session = this.getSession(workspaceId, sessionId);
     if (!session) return;
