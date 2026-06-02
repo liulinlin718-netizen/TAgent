@@ -3,10 +3,14 @@
  *
  * 搜索策略（按优先级）：
  * 1. Tavily API（最佳效果，需要 TAVILY_API_KEY）
- * 2. SearXNG 公共实例（免费，无需 key，国内可用）
- * 3. Bing 搜索抓取（最终 fallback）
+ * 2. Bing 搜索抓取（国内稳定可达，主力方案）
+ * 3. SearXNG 公共实例（并行竞速 + 快速超时）
  *
- * 注意：DuckDuckGo 在国内无法访问，已移除。
+ * 设计决策：
+ * - Bing 提升为 #2（国内稳定 200ms 响应）
+ * - SearXNG 降为 #3（公共实例不稳定，经常 403/超时）
+ * - SearXNG 改为并行竞速（Promise.any）而非串行重试
+ * - 超时缩短为 5 秒，避免阻塞 Agent 迭代
  */
 
 import type { ToolExecutor } from './registry.js';
@@ -36,7 +40,7 @@ export function createWebSearchTool(): ToolExecutor {
       const query = args.query as string;
       const maxResults = (args.maxResults as number) || 5;
 
-      // 1. Tavily (最佳)
+      // 1. Tavily (最佳 — 需要 API key)
       const tavilyKey = process.env.TAVILY_API_KEY;
       if (tavilyKey) {
         try {
@@ -46,21 +50,20 @@ export function createWebSearchTool(): ToolExecutor {
         }
       }
 
-      // 2. SearXNG 公共实例 (免费，国内可达)
-      for (const instance of SEARXNG_INSTANCES) {
-        try {
-          const result = await searchWithSearXNG(instance, query, maxResults);
-          if (result) return result;
-        } catch (e) {
-          console.warn(`[web_search] SearXNG ${instance} failed:`, (e as Error).message);
-        }
-      }
-
-      // 3. Bing 抓取 (最终 fallback)
+      // 2. Bing 抓取（国内稳定可达，主力方案）
       try {
-        return await searchWithBing(query, maxResults);
+        const bingResult = await searchWithBing(query, maxResults);
+        if (bingResult) return bingResult;
       } catch (e) {
         console.warn('[web_search] Bing failed:', (e as Error).message);
+      }
+
+      // 3. SearXNG 并行竞速（任意一个成功即返回）
+      try {
+        const searxResult = await searchWithSearXNGRace(query, maxResults);
+        if (searxResult) return searxResult;
+      } catch (e) {
+        console.warn('[web_search] SearXNG all failed:', (e as Error).message);
       }
 
       return `搜索暂时不可用。\n\n建议：设置 TAVILY_API_KEY 环境变量（https://tavily.com 免费注册，每月 1000 次）。`;
@@ -68,7 +71,7 @@ export function createWebSearchTool(): ToolExecutor {
   };
 }
 
-// ─── SearXNG 公共实例 ────────────────────────────────
+// ─── SearXNG 并行竞速 ────────────────────────────────
 
 const SEARXNG_INSTANCES = [
   'https://search.bus-hit.me',
@@ -77,11 +80,28 @@ const SEARXNG_INSTANCES = [
   'https://search.sapti.me',
 ];
 
+/** 并行请求所有 SearXNG 实例，取最快成功的结果 */
+async function searchWithSearXNGRace(
+  query: string,
+  maxResults: number,
+): Promise<string | null> {
+  try {
+    return await Promise.any(
+      SEARXNG_INSTANCES.map(instance =>
+        searchWithSearXNG(instance, query, maxResults),
+      ),
+    );
+  } catch {
+    // AggregateError: all promises rejected
+    return null;
+  }
+}
+
 async function searchWithSearXNG(
   baseUrl: string,
   query: string,
   maxResults: number,
-): Promise<string | null> {
+): Promise<string> {
   const params = new URLSearchParams({
     q: query,
     format: 'json',
@@ -94,17 +114,19 @@ async function searchWithSearXNG(
       'User-Agent': 'TAgent/0.1 (Research Assistant)',
       Accept: 'application/json',
     },
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(5000), // 5 秒超时（缩短，避免阻塞）
   });
 
-  if (!response.ok) return null;
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
   const data = (await response.json()) as {
     results?: { title: string; url: string; content: string; engine: string }[];
     answers?: string[];
   };
 
-  if (!data.results || data.results.length === 0) return null;
+  if (!data.results || data.results.length === 0) {
+    throw new Error('no results');
+  }
 
   const results = data.results.slice(0, maxResults);
   let output = `## 搜索结果: "${query}"\n\n`;
@@ -159,9 +181,9 @@ async function searchWithTavily(
   return output;
 }
 
-// ─── Bing 抓取 (最终 fallback) ───────────────────────
+// ─── Bing 抓取 (国内稳定主力) ────────────────────────
 
-async function searchWithBing(query: string, maxResults: number): Promise<string> {
+async function searchWithBing(query: string, maxResults: number): Promise<string | null> {
   const encoded = encodeURIComponent(query);
   const response = await fetch(`https://www.bing.com/search?q=${encoded}&count=${maxResults}&mkt=zh-CN`, {
     headers: {
@@ -206,7 +228,7 @@ async function searchWithBing(query: string, maxResults: number): Promise<string
   }
 
   if (results.length === 0) {
-    return `未找到关于 "${query}" 的搜索结果。\n\n建议：设置 TAVILY_API_KEY 环境变量（https://tavily.com 免费注册）。`;
+    return null; // 让调用方 fallback 到 SearXNG
   }
 
   let output = `## 搜索结果: "${query}" (Bing)\n\n`;
