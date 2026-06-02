@@ -75,10 +75,16 @@ const iterationLimitRule: GovernanceRule = {
   name: 'iteration_limit',
   severity: 'hard',
   check(ctx) {
-    if (ctx.currentIterations >= ctx.maxIterations) {
+    if (ctx.currentIterations > ctx.maxIterations) {
       return {
         passed: false,
-        event: { policyType: 'resource', severity: 'hard', result: 'blocked', message: `迭代次数已达上限 ${ctx.maxIterations}` },
+        event: { policyType: 'resource', severity: 'hard', result: 'blocked', message: `迭代次数已超上限 ${ctx.maxIterations}` },
+      };
+    }
+    if (ctx.currentIterations >= ctx.maxIterations * 0.8) {
+      return {
+        passed: true,
+        event: { policyType: 'resource', severity: 'info', result: 'warning', message: `迭代次数已达上限 ${Math.round((ctx.currentIterations / ctx.maxIterations) * 100)}%` },
       };
     }
     return { passed: true, event: { policyType: 'resource', severity: 'info', result: 'passed', message: '迭代检查通过' } };

@@ -157,6 +157,15 @@ export async function runOrchestrator(
         ));
         events?.onAgentComplete?.(agentId, result);
       } else {
+        // 治理拦截或失败时，仍收集已有的部分结果（plan §3.4: 不丢弃已有工作）
+        if (result.output && result.output.trim().length > 50) {
+          subResults.push({
+            agentId,
+            agentName: agentCard.name,
+            summary: `[部分结果] ${result.output.slice(0, 2000)}`,
+            cost: result.totalCost,
+          });
+        }
         bus.send(MessageBus.createMessage<TaskFailedPayload>(
           'TaskFailed', agentId, 'orchestrator',
           { taskId: task.id, error: result.output, attemptedStrategies: [] },
@@ -278,7 +287,7 @@ async function executeSubAgent(
       tools,
       traceWriter,
       costTracker: localCostTracker,
-      maxIterations: 6,
+      maxIterations: 12,  // 研究任务需要足够迭代（search+read+analyze 循环）
       maxCostPerTask: agentCard.constraints.maxCostPerTask,
       allowedTools: agentCard.constraints.allowedTools, // ← 治理安全协议
     },
