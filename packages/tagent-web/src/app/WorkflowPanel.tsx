@@ -251,24 +251,32 @@ export default function WorkflowPanel({ traces, isRunning }: WorkflowPanelProps)
       background: 'rgba(15, 23, 42, 0.8)',
       border: '1px solid rgba(100, 116, 139, 0.3)',
       overflow: 'hidden', marginBottom: '16px',
+      display: 'flex', flexDirection: 'column' as const,
+      flexShrink: 0,
     }}>
       <div style={{
         padding: '8px 14px', fontSize: '12px', fontWeight: 600, color: '#94a3b8',
         borderBottom: '1px solid rgba(100, 116, 139, 0.2)',
         display: 'flex', alignItems: 'center', gap: '6px',
+        flexShrink: 0,
       }}>
         <span>🔄</span> 工作流看板
         {isRunning && <span style={{ color: '#8b5cf6' }}>● 执行中</span>}
       </div>
-      <ReactFlow
-        nodes={nodes} edges={edges} nodeTypes={nodeTypes}
-        fitView proOptions={{ hideAttribution: true }}
-        nodesDraggable={false} nodesConnectable={false}
-        zoomOnScroll={false} panOnScroll={false} panOnDrag={false}
-        style={{ background: 'transparent' }}
-      >
-        <Background color="rgba(100, 116, 139, 0.1)" gap={20} />
-      </ReactFlow>
+      {/* React Flow 官方推荐: relative 容器 + absolute 子元素确保尺寸正确 */}
+      <div style={{ position: 'relative' as const, flex: 1, width: '100%' }}>
+        <div style={{ position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0 }}>
+          <ReactFlow
+            nodes={nodes} edges={edges} nodeTypes={nodeTypes}
+            fitView proOptions={{ hideAttribution: true }}
+            nodesDraggable={false} nodesConnectable={false}
+            zoomOnScroll={false} panOnScroll={false} panOnDrag={false}
+            style={{ width: '100%', height: '100%', background: 'transparent' }}
+          >
+            <Background color="rgba(100, 116, 139, 0.1)" gap={20} />
+          </ReactFlow>
+        </div>
+      </div>
     </div>
   );
 }
