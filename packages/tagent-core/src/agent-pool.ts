@@ -9,6 +9,7 @@
  */
 
 import { createAgentCard, type AgentCard, type AgentState } from './agent-card.js';
+import { AgentRegistry, AgentOverride } from './agent-registry.js';
 
 // ─── Resident Agent Definitions ──────────────────────
 
@@ -28,6 +29,7 @@ const RESEARCH_AGENT: AgentCard = createAgentCard({
     maxCostPerTask: 0.5,
     allowedTools: ['web_search', 'read_url'],
     approvalMode: 'full_auto',
+    allowedDomains: [],
   },
 });
 
@@ -47,6 +49,7 @@ const DOCUMENT_AGENT: AgentCard = createAgentCard({
     maxCostPerTask: 0.3,
     allowedTools: ['web_search', 'read_url'],
     approvalMode: 'full_auto',
+    allowedDomains: [],
   },
 });
 
@@ -66,6 +69,7 @@ const DATA_AGENT: AgentCard = createAgentCard({
     maxCostPerTask: 0.3,
     allowedTools: ['web_search', 'read_url'],
     approvalMode: 'full_auto',
+    allowedDomains: [],
   },
 });
 
@@ -133,11 +137,34 @@ export const AGENT_SOULS: Record<string, string> = {
 export class AgentPool {
   private agents = new Map<string, AgentCard>();
   private taskAgentCounter = 0;
+  private registry: AgentRegistry | null = null;
 
   constructor() {
     this.agents.set(RESEARCH_AGENT.id, { ...RESEARCH_AGENT });
     this.agents.set(DOCUMENT_AGENT.id, { ...DOCUMENT_AGENT });
     this.agents.set(DATA_AGENT.id, { ...DATA_AGENT });
+  }
+
+  async initialize(workspaceRoot: string): Promise<void> {
+    this.registry = new AgentRegistry(workspaceRoot);
+    const overrides = await this.registry.getOverrides();
+    for (const [id, override] of Object.entries(overrides)) {
+      const agent = this.agents.get(id);
+      if (agent) {
+        if (override.skills) agent.capabilities.skills = override.skills;
+        if (override.mcpServers) agent.capabilities.mcpServers = override.mcpServers;
+      }
+    }
+  }
+
+  async updateAgentOverride(id: string, skills?: string[], mcpServers?: string[]): Promise<void> {
+    if (!this.registry) throw new Error('AgentPool not initialized');
+    const agent = this.agents.get(id);
+    if (!agent) throw new Error(`Agent ${id} not found`);
+
+    const override = await this.registry.updateOverride(id, { skills, mcpServers });
+    if (override.skills) agent.capabilities.skills = override.skills;
+    if (override.mcpServers) agent.capabilities.mcpServers = override.mcpServers;
   }
 
   getResidentAgents(): AgentCard[] {
@@ -157,6 +184,11 @@ export class AgentPool {
     if (agent) {
       agent.state = { ...agent.state, ...state };
     }
+  }
+
+  /** 更新或添加 Agent（团队导入用） */
+  updateAgent(id: string, card: AgentCard): void {
+    this.agents.set(id, card);
   }
 
   /** 创建任务态 Agent（动态裂变） */
@@ -181,6 +213,7 @@ export class AgentPool {
         maxCostPerTask: parent ? parent.constraints.maxCostPerTask * 0.5 : 0.2,
         allowedTools: parent?.constraints.allowedTools || ['web_search', 'read_url'],
         approvalMode: parent?.constraints.approvalMode || 'full_auto',
+        allowedDomains: parent?.constraints.allowedDomains || [],
       },
       parentAgentId: parentId,
     });

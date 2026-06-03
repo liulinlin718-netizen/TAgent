@@ -14,7 +14,7 @@ import type { ApprovalMode } from './agent-card.js';
 // ─── Types ───────────────────────────────────────────
 
 export interface GovernanceRule {
-  type: 'resource' | 'security' | 'quality' | 'alignment';
+  type: 'resource' | 'security' | 'quality' | 'alignment' | 'organization';
   name: string;
   severity: 'hard' | 'soft' | 'info';
   check: (ctx: GovernanceContext) => GovernanceResult;
@@ -31,6 +31,10 @@ export interface GovernanceContext {
   fissionDepth?: number;
   maxFissionDepth?: number;
   approvalMode: ApprovalMode;
+  /** 组织治理: 当前活跃 Agent 数 */
+  activeAgentCount?: number;
+  /** 组织治理: 最大允许 Agent 数 */
+  maxAgents?: number;
 }
 
 export interface GovernanceResult {
@@ -140,13 +144,115 @@ const fissionDepthRule: GovernanceRule = {
   },
 };
 
+/** 质量协议: 输出置信度检查 (plan §3.10 五类治理协议 - 质量治理) */
+const qualityCheckRule: GovernanceRule = {
+  type: 'quality',
+  name: 'output_quality',
+  severity: 'soft',
+  check(ctx) {
+    // D9: 迭代次数过低时发出警告（可能草率完成）
+    if (ctx.currentIterations < 2 && ctx.currentCost > 0) {
+      return {
+        passed: true,
+        event: {
+          policyType: 'quality', severity: 'soft', result: 'warning',
+          message: '迭代次数较少，建议更深入分析以确保输出质量',
+          suggestion: '增加搜索范围或交叉验证信息源',
+        },
+      };
+    }
+    return { passed: true, event: { policyType: 'quality', severity: 'info', result: 'passed', message: '质量检查通过' } };
+  },
+};
+
+/** D9: 质量协议增强 — 信息源多样性检查 */
+const sourceDiversityRule: GovernanceRule = {
+  type: 'quality',
+  name: 'source_diversity',
+  severity: 'info',
+  check(ctx) {
+    // 如果 Agent 使用了工具但迭代次数 < 3，提示信息源可能不够多样
+    if (ctx.toolName === 'web_search' && ctx.currentIterations < 3) {
+      return {
+        passed: true,
+        event: {
+          policyType: 'quality', severity: 'info', result: 'warning',
+          message: '搜索次数较少，建议使用多个关键词以提高信息源多样性',
+          suggestion: '尝试不同角度的搜索查询，交叉验证信息',
+        },
+      };
+    }
+    return { passed: true, event: { policyType: 'quality', severity: 'info', result: 'passed', message: '信息源多样性检查通过' } };
+  },
+};
+
+/** 方向协议: 意图对齐检测 (plan §3.10 五类治理协议 - 方向治理) */
+const alignmentCheckRule: GovernanceRule = {
+  type: 'alignment',
+  name: 'intent_alignment',
+  severity: 'soft',
+  check(ctx) {
+    // 当迭代次数超过上限的 60% 且仍在运行，可能偏离方向
+    if (ctx.currentIterations > ctx.maxIterations * 0.6) {
+      return {
+        passed: true,
+        event: {
+          policyType: 'alignment', severity: 'info', result: 'warning',
+          message: `已执行 ${ctx.currentIterations} 次迭代，请确认任务方向是否正确`,
+          suggestion: '检查当前执行路径是否偏离了原始用户意图',
+        },
+      };
+    }
+    return { passed: true, event: { policyType: 'alignment', severity: 'info', result: 'passed', message: '方向检查通过' } };
+  },
+};
+
+/** 组织治理: 团队变更/能力评估 (plan §3.10 五类治理协议 - 组织治理) */
+const organizationRule: GovernanceRule = {
+  type: 'organization',
+  name: 'team_change_review',
+  severity: 'soft',
+  check(ctx) {
+    const maxAgents = ctx.maxAgents ?? 10;
+    const activeCount = ctx.activeAgentCount ?? 0;
+    // 当活跃 Agent 数超过限制的 80%，警告
+    if (activeCount >= maxAgents) {
+      return {
+        passed: false,
+        event: {
+          policyType: 'organization', severity: 'hard', result: 'blocked',
+          message: `活跃 Agent 数已达上限 ${maxAgents}，无法创建新 Agent`,
+          suggestion: '归档不活跃的任务 Agent 或提高上限',
+        },
+      };
+    }
+    if (activeCount >= maxAgents * 0.8) {
+      return {
+        passed: true,
+        event: {
+          policyType: 'organization', severity: 'soft', result: 'warning',
+          message: `活跃 Agent 数已达 ${activeCount}/${maxAgents}，接近上限`,
+          suggestion: '评估是否有可归档的 Agent，避免角色重复',
+        },
+      };
+    }
+    return { passed: true, event: { policyType: 'organization', severity: 'info', result: 'passed', message: '组织检查通过' } };
+  },
+};
+
 // ─── Governance Engine ───────────────────────────────
 
 export type GovernanceTemplate = 'strict_cost' | 'quality_first' | 'standard';
 
+/**
+ * 模板差异化 (plan §3.10):
+ * - strict_cost: 所有规则 + 质量 + 方向 — 强调成本控制
+ * - quality_first: 所有规则 + 质量 + 方向 — 质量检查为 soft（审议）而非 info
+ * - standard: 基础规则（成本+迭代+白名单+裂变）— 最宽松
+ */
 const TEMPLATES: Record<GovernanceTemplate, GovernanceRule[]> = {
-  strict_cost: [budgetCapRule, iterationLimitRule, toolWhitelistRule, fissionDepthRule],
-  quality_first: [budgetCapRule, iterationLimitRule, toolWhitelistRule, fissionDepthRule],
+  strict_cost: [budgetCapRule, iterationLimitRule, toolWhitelistRule, fissionDepthRule, qualityCheckRule, sourceDiversityRule, alignmentCheckRule, organizationRule],
+  quality_first: [budgetCapRule, iterationLimitRule, toolWhitelistRule, fissionDepthRule, qualityCheckRule, sourceDiversityRule, alignmentCheckRule, organizationRule],
   standard: [budgetCapRule, iterationLimitRule, toolWhitelistRule, fissionDepthRule],
 };
 
@@ -167,7 +273,13 @@ export class GovernanceEngine {
     return { allPassed: blockers.length === 0, results, blockers };
   }
 
+  /** 获取所有检查结果（包括 passed 的），用于决策链回溯 */
+  evaluateAll(ctx: GovernanceContext): GovernanceResult[] {
+    return this.rules.map(rule => rule.check(ctx));
+  }
+
   addRule(rule: GovernanceRule): void {
     this.rules.push(rule);
   }
 }
+

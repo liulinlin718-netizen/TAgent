@@ -1,0 +1,29 @@
+{
+  "document-agent": {
+    "id": "document-agent",
+    "skills": [
+      "report-generation",
+      "content-editing",
+      "sk-1780401848049-lvvfe"
+    ],
+    "mcpServers": []
+  },
+  "data-agent": {
+    "id": "data-agent",
+    "skills": [
+      "data-analysis",
+      "trend-insight",
+      "sk-1780401848049-lvvfe"
+    ],
+    "mcpServers": []
+  },
+  "research-agent": {
+    "id": "research-agent",
+    "skills": [
+      "web-research",
+      "competitor-analysis",
+      "sk-1780401848049-lvvfe"
+    ],
+    "mcpServers": []
+  }
+}

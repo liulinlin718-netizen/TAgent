@@ -138,6 +138,40 @@ class Store {
     return ws?.sessions.find(s => s.id === sessionId);
   }
 
+  forkSession(
+    workspaceId: string,
+    sourceSessionId: string,
+    forkType: 'fork_full' | 'fork_summary',
+    summaryText?: string,
+  ): Session | null {
+    const sourceSession = this.getSession(workspaceId, sourceSessionId);
+    if (!sourceSession) return null;
+
+    const newSession = this.createSession(
+      workspaceId,
+      `${sourceSession.title} (Fork)`,
+      forkType,
+      sourceSessionId
+    );
+
+    if (!newSession) return null;
+
+    if (forkType === 'fork_full') {
+      newSession.messages = JSON.parse(JSON.stringify(sourceSession.messages));
+    } else if (forkType === 'fork_summary' && summaryText) {
+      newSession.messages = [
+        {
+          id: `msg-${Date.now()}-sys`,
+          role: 'assistant',
+          content: `**[来自父分支的上下文摘要]**\n\n${summaryText}`,
+          timestamp: new Date().toISOString(),
+        }
+      ];
+    }
+
+    return newSession;
+  }
+
   listSessions(workspaceId: string): Session[] {
     const ws = this.workspaces.get(workspaceId);
     if (!ws) return [];
@@ -170,6 +204,71 @@ class Store {
     if (session.messages.length === 1 && msg.role === 'user') {
       session.title = msg.content.slice(0, 30) + (msg.content.length > 30 ? '...' : '');
     }
+  }
+
+  /**
+   * D3: 结论摘取 — 从 Session 中提取关键结论标记
+   * 返回带 [结论] 标记的消息片段，用于合并回主线或引用
+   */
+  extractConclusions(workspaceId: string, sessionId: string): string[] {
+    const session = this.getSession(workspaceId, sessionId);
+    if (!session) return [];
+
+    const conclusions: string[] = [];
+    for (const msg of session.messages) {
+      if (msg.role !== 'assistant') continue;
+      // 匹配结论性段落：以「结论」「总结」「关键发现」等开头的段落
+      const patterns = [
+        /(?:^|\n)(?:#{1,3}\s*)?(?:结论|总结|关键发现|核心结论|建议|摘要)[：:].*/gi,
+        /(?:^|\n)\*\*(?:结论|总结|关键发现|核心结论|建议|摘要)\*\*[：:].*/gi,
+        /(?:^|\n)(?:综上所述|总而言之|概括来说).*/gi,
+      ];
+      for (const pattern of patterns) {
+        const matches = msg.content.match(pattern);
+        if (matches) conclusions.push(...matches.map(m => m.trim()));
+      }
+      // 如果没有匹配到格式化结论，取最后 200 字作为隐式结论
+      if (conclusions.length === 0 && msg === session.messages[session.messages.length - 1]) {
+        const lastChunk = msg.content.slice(-200).trim();
+        if (lastChunk.length > 20) conclusions.push(`[隐式结论] ${lastChunk}`);
+      }
+    }
+    return conclusions;
+  }
+
+  /**
+   * D4: 跨 Session 记忆继承 — 获取关联 Session 链的上下文摘要
+   * 沿 parentSessionId 链条向上追溯，收集每个祖先的最后一条 assistant 消息
+   */
+  getSessionMemory(workspaceId: string, sessionId: string, maxDepth: number = 3): string[] {
+    const memories: string[] = [];
+    let currentId: string | null = sessionId;
+    let depth = 0;
+
+    while (currentId && depth < maxDepth) {
+      const session = this.getSession(workspaceId, currentId);
+      if (!session) break;
+
+      // 收集该 Session 的最后 assistant 消息
+      const lastAssistant = [...session.messages]
+        .reverse()
+        .find(m => m.role === 'assistant');
+      if (lastAssistant) {
+        memories.unshift(
+          `[${session.title}] ${lastAssistant.content.slice(0, 500)}`
+        );
+      }
+
+      currentId = session.parentSessionId;
+      depth++;
+    }
+    return memories;
+  }
+
+  /** V3b.2: 获取 Session 消息列表（供 Diff 视图使用） */
+  getMessages(workspaceId: string, sessionId: string): ChatMessage[] {
+    const session = this.getSession(workspaceId, sessionId);
+    return session?.messages || [];
   }
 }
 

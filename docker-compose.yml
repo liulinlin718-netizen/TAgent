@@ -1,0 +1,37 @@
+version: '3.8'
+
+# TAgent 本地开发环境 — PostgreSQL + Redis (plan §5.2)
+# 启动: docker compose up -d
+# 停止: docker compose down
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tagent-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: tagent
+      POSTGRES_USER: tagent
+      POSTGRES_PASSWORD: tagent_dev
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tagent"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: tagent-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:

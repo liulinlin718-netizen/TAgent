@@ -10,17 +10,19 @@
 
 // Agent Loop
 export { runAgentLoop } from './agent-loop.js';
-export type { AgentConfig, AgentLoopResult, LoopEventHandler } from './agent-loop.js';
+export type { AgentConfig, AgentLoopResult, LoopEventHandler, ApprovalRequest } from './agent-loop.js';
 
 // Trace
-export { TraceWriter } from './trace.js';
-export type { TraceEntry, TraceSpan, SpanType } from './trace.js';
+export { TraceWriter, SnapshotManager } from './trace.js';
+export type { TraceEntry, TraceSpan, SpanType, Snapshot } from './trace.js';
 
 // Tools
 export { ToolRegistry } from './tools/registry.js';
 export type { ToolExecutor } from './tools/registry.js';
 export { createWebSearchTool } from './tools/web-search.js';
 export { createUrlReaderTool } from './tools/url-reader.js';
+// D6: MCP Tool Bridge
+export { createMCPBridgeTool, registerMCPTools } from './tools/mcp-bridge.js';
 
 // Explore
 export { runExplore } from './explore.js';
@@ -38,6 +40,9 @@ export type {
 export { createAgentCard, createIdleState, createBusyState, createOrchestrationState } from './agent-card.js';
 export type { AgentCard, AgentState, ApprovalMode } from './agent-card.js';
 export { AgentPool, AGENT_SOULS } from './agent-pool.js';
+export { SkillsRegistry } from './skills-registry.js';
+export { MCPRegistry } from './mcp-registry.js';
+export { AgentRegistry } from './agent-registry.js';
 
 // Phase 2: Governance (plan §3.10)
 export { GovernanceEngine } from './governance.js';
@@ -46,3 +51,20 @@ export type { GovernanceRule, GovernanceContext, GovernanceResult, GovernanceTem
 // Phase 2: Orchestrator (plan §3.4)
 export { runOrchestrator } from './orchestrator.js';
 export type { OrchestratorConfig, OrchestratorResult, OrchestratorEventHandler, SubTask } from './orchestrator.js';
+
+// D13: Persistence (plan §5.2)
+export { FilePersistence, MemoryPersistence, createPersistence } from './persistence.js';
+export type { PersistenceAdapter } from './persistence.js';
+export { PostgresPersistence } from './postgres-persistence.js';
+export { RedisCache } from './redis-cache.js';
+
+// D14: Sandbox
+export { createSandboxTool } from './tools/sandbox.js';
+
+// D15/D16/D17: Runtime Infrastructure
+export { HeartbeatMonitor, CronScheduler, MetricsCollector } from './runtime.js';
+export type { HeartbeatEntry, CronJob, PerformanceMetrics } from './runtime.js';
+
+// Team Export/Import
+export { exportTeam, importTeam } from './team-export.js';
+export type { TeamExport, SanitizeOptions } from './team-export.js';

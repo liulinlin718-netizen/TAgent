@@ -14,8 +14,11 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@tagent/ai": "workspace:*",
-    "openai": "^6.39.1"
+    "ioredis": "^5.11.0",
+    "openai": "^6.39.1",
+    "postgres": "^3.4.9"
   },
   "devDependencies": {
     "@types/node": "^20.19.41",

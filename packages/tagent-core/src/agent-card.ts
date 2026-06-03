@@ -31,6 +31,8 @@ export interface AgentCard {
     maxCostPerTask: number;     // USD
     allowedTools: string[];
     approvalMode: ApprovalMode;
+    /** URL 域名白名单（D12 安全协议）— 空数组=不限制 */
+    allowedDomains: string[];
   };
 
   state: AgentState;
@@ -97,6 +99,7 @@ export function createAgentCard(
       maxCostPerTask: 0.5,
       allowedTools: ['web_search', 'read_url'],
       approvalMode: 'full_auto',
+      allowedDomains: [],
     },
     state: createIdleState(),
     stats: { tasksCompleted: 0, totalCost: 0, avgIterations: 0 },

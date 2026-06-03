@@ -35,6 +35,8 @@ export interface AgentConfig {
   maxCostPerTask?: number; // USD — 治理资源协议
   /** 工具白名单（治理安全协议 §3.10）— 不在此列表中的工具将被拦截 */
   allowedTools?: string[];
+  /** 三级审批模式 (D1) — suggest / auto_edit / full_auto */
+  approvalMode?: 'suggest' | 'auto_edit' | 'full_auto';
 }
 
 export interface AgentLoopResult {
@@ -52,8 +54,20 @@ export interface LoopEventHandler {
   onToolCall?: (tool: string, args: Record<string, unknown>) => void;
   onToolResult?: (tool: string, result: string) => void;
   onTextDelta?: (text: string) => void;
-  onGovernance?: (event: { type: string; message: string }) => void;
+  onGovernance?: (event: { policyType: string; severity: string; result: string; message: string; suggestion?: string; ruleName?: string }) => void;
+  /** D1: 审批请求 — suggest/auto_edit 模式下工具执行前触发 */
+  onApprovalRequest?: (request: ApprovalRequest) => void;
   onComplete?: (result: AgentLoopResult) => void;
+}
+
+/** D1: 审批请求数据结构 */
+export interface ApprovalRequest {
+  requestId: string;
+  toolName: string;
+  toolArgs: Record<string, unknown>;
+  mode: 'suggest' | 'auto_edit';
+  /** resolve 为 true=批准, false=拒绝 */
+  resolve: (approved: boolean) => void;
 }
 
 // ─── Snapshot ────────────────────────────────────────
@@ -91,6 +105,7 @@ export async function runAgentLoop(
     maxIterations = 15,
     maxCostPerTask = 1.0,
     allowedTools,
+    approvalMode = 'full_auto',
   } = config;
 
   // 治理引擎实例（plan §3.4 步骤④ Hook）
@@ -183,7 +198,7 @@ export async function runAgentLoop(
       // 发送所有警告事件
       for (const r of govResult.results) {
         if (r.event.result === 'warning') {
-          events?.onGovernance?.({ type: r.event.policyType, message: r.event.message });
+          events?.onGovernance?.(r.event);
           writeTrace(traceWriter, traceId, agentId, sessionId, lastSnapshot.id, {
             type: 'governance_check', timestamp: new Date().toISOString(),
             policy: r.event.policyType, result: 'warning', summary: r.event.message,
@@ -198,7 +213,7 @@ export async function runAgentLoop(
           type: 'governance_check', timestamp: new Date().toISOString(),
           policy: blocker.event.policyType, result: 'blocked', summary: blocker.event.message,
         });
-        events?.onGovernance?.({ type: blocker.event.policyType, message: blocker.event.message });
+        events?.onGovernance?.(blocker.event);
 
         return {
           success: false,
@@ -232,7 +247,7 @@ export async function runAgentLoop(
             policy: 'tool_whitelist', result: 'blocked',
             summary: blockMsg, tool: toolCall.name,
           });
-          events?.onGovernance?.({ type: 'tool_blocked', message: blockMsg });
+          events?.onGovernance?.({ policyType: 'security', severity: 'hard', result: 'blocked', message: blockMsg, ruleName: 'tool_whitelist' });
 
           // 向 LLM 返回拦截消息，让它知道该工具不可用
           messages.push({
@@ -244,6 +259,20 @@ export async function runAgentLoop(
         }
 
         events?.onToolCall?.(toolCall.name, toolArgs);
+
+        // D1: 三级审批模式检查 (plan §2.13)
+        if (approvalMode !== 'full_auto') {
+          const approved = await requestApproval(toolCall.name, toolArgs, approvalMode, events);
+          if (!approved) {
+            const rejectMsg = `用户拒绝了工具 "${toolCall.name}" 的执行。`;
+            writeTrace(traceWriter, traceId, agentId, sessionId, lastSnapshot.id, {
+              type: 'governance_check', timestamp: new Date().toISOString(),
+              policy: 'approval', result: 'blocked', summary: rejectMsg, tool: toolCall.name,
+            });
+            messages.push({ role: 'tool', content: rejectMsg, toolCallId: toolCall.id });
+            continue;
+          }
+        }
 
         writeTrace(traceWriter, traceId, agentId, sessionId, lastSnapshot.id, {
           type: 'tool_call',
@@ -336,4 +365,46 @@ function writeTrace(
   span: TraceSpan,
 ): void {
   writer.write({ traceId, agentId, sessionId, parentTraceId: null, snapshotId, span });
+}
+
+/**
+ * D1: 三级审批请求
+ *
+ * suggest:    暂停等待用户确认（无超时）
+ * auto_edit:  暂停等待用户确认，3s 内无反对则自动批准
+ */
+function requestApproval(
+  toolName: string,
+  toolArgs: Record<string, unknown>,
+  mode: 'suggest' | 'auto_edit',
+  events?: LoopEventHandler,
+): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const requestId = `approval-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+    // auto_edit: 3s 后自动批准
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (mode === 'auto_edit') {
+      timer = setTimeout(() => resolve(true), 3000);
+    }
+
+    const request: ApprovalRequest = {
+      requestId,
+      toolName,
+      toolArgs,
+      mode,
+      resolve: (approved: boolean) => {
+        if (timer) clearTimeout(timer);
+        resolve(approved);
+      },
+    };
+
+    if (events?.onApprovalRequest) {
+      events.onApprovalRequest(request);
+    } else {
+      // 没有审批处理器时，默认批准
+      if (timer) clearTimeout(timer);
+      resolve(true);
+    }
+  });
 }

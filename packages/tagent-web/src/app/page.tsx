@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { LazyMotion, domAnimation, m, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
 import styles from './page.module.css';
 
@@ -258,6 +258,7 @@ export default function AppPage() {
   // ─── Render ─────────────────────────────────────────
 
   return (
+    <LazyMotion features={domAnimation}>
     <div className={styles.app}>
       {/* ── Sidebar (plan §4.2) ── */}
       <aside className={`${styles.sidebar} ${sidebarOpen ? '' : styles.sidebarCollapsed}`}>
@@ -359,10 +360,10 @@ export default function AppPage() {
         <div className={styles.messages}>
           {messages.length === 0 && (
             <div className={styles.welcome}>
-              <motion.div className={styles.welcomeIcon}
+              <m.div className={styles.welcomeIcon}
                 initial={{ scale: 0 }} animate={{ scale: 1 }}
                 transition={{ type: 'spring', stiffness: 200 }}
-              >⚡</motion.div>
+              >⚡</m.div>
               <h1 className={styles.welcomeTitle}>TAgent</h1>
               <p className={styles.welcomeSubtitle}>AI 办公协作助手 — 让 Agent 为你工作</p>
               <div className={styles.suggestions}>
@@ -388,7 +389,7 @@ export default function AppPage() {
 
           <AnimatePresence>
             {messages.map(msg => (
-              <motion.div key={msg.id}
+              <m.div key={msg.id}
                 className={`${styles.message} ${styles[msg.role]}`}
                 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3 }}
@@ -414,7 +415,7 @@ export default function AppPage() {
                     </div>
                   )}
                 </div>
-              </motion.div>
+              </m.div>
             ))}
           </AnimatePresence>
           <div ref={messagesEndRef} />
@@ -437,6 +438,7 @@ export default function AppPage() {
         </footer>
       </main>
     </div>
+    </LazyMotion>
   );
 }
 
@@ -461,12 +463,12 @@ function TraceItem({ trace }: { trace: TraceEvent }) {
   const { icon, label } = map[trace.type] || { icon: '•', label: trace.type };
 
   return (
-    <motion.div className={styles.traceItem}
+    <m.div className={styles.traceItem}
       initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
     >
       <span className={styles.traceIcon}>{icon}</span>
       <span className={styles.traceLabel}>{label}</span>
-    </motion.div>
+    </m.div>
   );
 }
 

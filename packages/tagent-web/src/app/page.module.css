@@ -273,7 +273,52 @@
 .headerRight {
   display: flex;
   align-items: center;
+  gap: var(--space-4);
+}
+
+.forkActions {
+  display: flex;
   gap: var(--space-2);
+  border-right: 1px solid var(--glass-border);
+  padding-right: var(--space-4);
+}
+
+.forkBtn {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--glass-border);
+  color: var(--color-text-primary);
+  font-size: var(--text-xs);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.forkBtn:hover {
+  background: var(--color-accent-glow);
+  border-color: var(--color-accent-primary);
+  color: var(--color-accent-primary);
+}
+
+.govSelector {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--glass-border);
+  color: var(--color-text-primary);
+  font-size: var(--text-xs);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all var(--transition-fast);
+}
+
+.govSelector:hover {
+  border-color: var(--color-accent-primary);
+}
+
+.govSelector option {
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
 }
 
 .wsName {
@@ -375,6 +420,62 @@
   box-shadow: var(--shadow-glow);
 }
 
+/* D10: Workspace Bento Grid */
+.wsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  width: 100%;
+  max-width: 680px;
+  margin: 24px 0;
+}
+.wsCard {
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  backdrop-filter: blur(8px);
+}
+.wsCard:hover {
+  border-color: rgba(139, 92, 246, 0.4);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+.wsCardName { font-weight: 700; font-size: 14px; color: #e2e8f0; margin-bottom: 4px; }
+.wsCardDesc { font-size: 12px; color: #64748b; margin-bottom: 8px; }
+.wsCardMeta { display: flex; gap: 6px; flex-wrap: wrap; }
+.wsCardNew {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: #64748b;
+  font-size: 13px;
+  border-style: dashed;
+}
+.wsCardNew:hover { color: #e2e8f0; }
+
+.onboardingBtn {
+  margin-top: 12px;
+  padding: 10px 24px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #7c3aed, #6366f1);
+  color: #fff;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s;
+  box-shadow: 0 2px 12px rgba(124, 58, 237, 0.4);
+}
+.onboardingBtn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.6);
+}
+
 /* Message Bubbles */
 
 .message {
@@ -462,10 +563,25 @@
   gap: var(--space-2);
   padding: 2px 0;
   color: var(--color-text-secondary);
+  flex-wrap: wrap;
 }
 
 .traceIcon { font-size: var(--text-sm); }
 .traceLabel { font-family: var(--font-mono); }
+
+.traceDetails {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  background: rgba(99, 102, 241, 0.06);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-left: 2px solid var(--color-accent-primary);
+}
 
 /* Stats */
 
@@ -550,4 +666,66 @@
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* D19: 响应式布局 — 平板 */
+@media (max-width: 900px) {
+  .sidebar { width: 220px; min-width: 220px; }
+  .sidebarCollapsed { width: 0; min-width: 0; border: none; }
+  .wsGrid { grid-template-columns: 1fr; }
+}
+
+/* D19: 响应式布局 — 移动端 */
+@media (max-width: 600px) {
+  .app { flex-direction: column; }
+  .sidebar {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-height: 40vh;
+    border-right: none;
+    border-bottom: 1px solid var(--glass-border);
+  }
+  .sidebarCollapsed {
+    max-height: 0;
+    overflow: hidden;
+    border: none;
+  }
+  .main { width: 100%; }
+  .header { flex-wrap: wrap; gap: 8px; }
+  .headerRight { flex-wrap: wrap; }
+  .forkActions { flex-wrap: wrap; }
+  .inputWrapper { flex-direction: column; }
+  .input { border-radius: 8px; }
+  .sendButton { width: 100%; border-radius: 8px; }
+  .welcomeTitle { font-size: 1.4rem; }
+  .wsGrid { grid-template-columns: 1fr; max-width: 100%; }
+  .suggestions { flex-direction: column; }
+  .suggestion { width: 100%; text-align: center; }
+}
+
+/* D21: 浅色主题 */
+:global([data-theme='light']) .app {
+  --color-bg-surface: #f8f9fa;
+  --color-bg-base: #ffffff;
+  --color-text-primary: #1a1a2e;
+  --color-text-secondary: #4a5568;
+  --glass-bg: rgba(0, 0, 0, 0.03);
+  --glass-border: rgba(0, 0, 0, 0.1);
+  --color-accent-glow: rgba(124, 58, 237, 0.08);
+  --shadow-glow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+:global([data-theme='light']) .sidebar {
+  background: #f1f3f5;
+  border-color: #e2e8f0;
+}
+
+:global([data-theme='light']) .message.assistant .messageBody {
+  background: #f0f0ff;
+  border-color: #d4d4ff;
+}
+
+:global([data-theme='light']) .header {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: #e2e8f0;
 }

@@ -72,7 +72,7 @@ export interface TaskFailedPayload {
 
 /** 治理引擎→Agent: 约束检查结果通知 */
 export interface GovernanceEventPayload {
-  policyType: 'resource' | 'security' | 'quality' | 'alignment';
+  policyType: 'resource' | 'security' | 'quality' | 'alignment' | 'organization';
   severity: 'hard' | 'soft' | 'info';
   result: 'passed' | 'blocked' | 'warning';
   message: string;

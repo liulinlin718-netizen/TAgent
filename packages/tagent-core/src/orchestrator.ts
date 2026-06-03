@@ -19,9 +19,13 @@ import { runAgentLoop, type AgentLoopResult, type LoopEventHandler } from './age
 import { ToolRegistry } from './tools/registry.js';
 import { createWebSearchTool } from './tools/web-search.js';
 import { createUrlReaderTool } from './tools/url-reader.js';
+import { createMCPBridgeTool } from './tools/mcp-bridge.js';
 import { TraceWriter } from './trace.js';
 import { AgentPool, AGENT_SOULS } from './agent-pool.js';
+import type { SkillsRegistry } from './skills-registry.js';
+import type { MCPRegistry } from './mcp-registry.js';
 import { GovernanceEngine, type GovernanceContext } from './governance.js';
+import type { GovernanceEventPayload } from './protocol.js';
 import {
   MessageBus,
   type TaskRequestPayload,
@@ -38,6 +42,10 @@ export interface OrchestratorConfig {
   maxTotalCost?: number;
   /** 外部 AgentPool 单例（服务器级别共享） */
   agentPool?: AgentPool;
+  skillsRegistry?: SkillsRegistry;
+  mcpRegistry?: MCPRegistry;
+  /** 治理模板 (plan §3.10) */
+  governanceTemplate?: 'standard' | 'strict_cost' | 'quality_first';
 }
 
 export interface SubTask {
@@ -63,7 +71,7 @@ export interface OrchestratorEventHandler {
   onAgentToolResult?: (agentId: string, tool: string, resultLength: number) => void;
   onAgentComplete?: (agentId: string, result: AgentLoopResult) => void;
   onAgentFailed?: (agentId: string, error: string) => void;
-  onGovernanceEvent?: (agentId: string, event: { type: string; message: string }) => void;
+  onGovernanceEvent?: (agentId: string, event: { policyType: string; severity: string; result: string; message: string; suggestion?: string; ruleName?: string }) => void;
   onSynthesisStart?: () => void;
   onTextDelta?: (text: string) => void;
   onComplete?: (result: OrchestratorResult) => void;
@@ -76,10 +84,10 @@ export async function runOrchestrator(
   userMessage: string,
   events?: OrchestratorEventHandler,
 ): Promise<OrchestratorResult> {
-  const { provider, model, maxTotalCost = 1.0, agentPool: externalPool } = config;
+  const { provider, model, maxTotalCost = 1.0, agentPool: externalPool, governanceTemplate = 'standard' } = config;
   const pool = externalPool || new AgentPool();
   const bus = new MessageBus();
-  const governance = new GovernanceEngine('standard');
+  const governance = new GovernanceEngine(governanceTemplate);
   const globalCostTracker = new CostTracker();
 
   // ── Step 1: 任务分解 ──
@@ -88,7 +96,7 @@ export async function runOrchestrator(
   events?.onTaskDecomposition?.(decomposition);
 
   if (decomposition.length === 0) {
-    return runSingleAgent(provider, model, pool, userMessage, globalCostTracker, events);
+    return runSingleAgent(provider, model, pool, userMessage, globalCostTracker, config.skillsRegistry, events);
   }
 
   // ── Step 2: 并行分派 ──
@@ -114,12 +122,16 @@ export async function runOrchestrator(
     };
 
     const govResult = governance.evaluate(govCtx);
-    if (!govResult.allPassed) {
-      const blocker = govResult.blockers[0];
+
+    // 发射所有治理检查结果（含 passed）以支持决策链回溯 (plan §3.10)
+    for (const r of govResult.results) {
       events?.onGovernanceEvent?.(agentId, {
-        type: blocker.event.policyType,
-        message: blocker.event.message,
+        ...r.event,
+        ruleName: r.event.policyType,
       });
+    }
+
+    if (!govResult.allPassed) {
       continue;
     }
 
@@ -133,7 +145,7 @@ export async function runOrchestrator(
 
     // 并行执行
     const taskPromise = executeSubAgent(
-      provider, model, agentCard, task, globalCostTracker, pool, events,
+      provider, model, agentCard, task, globalCostTracker, pool, config.skillsRegistry, config.mcpRegistry, events,
     ).then(result => {
       pool.updateState(agentId, { business: 'idle' });
 
@@ -258,16 +270,44 @@ async function executeSubAgent(
   task: SubTask,
   globalCostTracker: CostTracker,
   pool: AgentPool,
+  skillsRegistry: SkillsRegistry | undefined,
+  mcpRegistry: MCPRegistry | undefined,
   events?: OrchestratorEventHandler,
 ): Promise<AgentLoopResult> {
   const tools = new ToolRegistry();
   tools.register(createWebSearchTool());
-  tools.register(createUrlReaderTool());
+  tools.register(createUrlReaderTool({
+    allowedDomains: agentCard.constraints.allowedDomains,
+  }));
+
+  // D6: 注册 Agent 绑定的 MCP Server 工具
+  if (agentCard.capabilities.mcpServers?.length > 0 && mcpRegistry) {
+    for (const mcpServerId of agentCard.capabilities.mcpServers) {
+      const serverConfig = await mcpRegistry.getServer(mcpServerId);
+      if (serverConfig) {
+        tools.register(createMCPBridgeTool(serverConfig));
+      }
+    }
+  }
 
   const traceWriter = new TraceWriter(`./traces/${agentCard.id}-${task.id}.jsonl`);
   const localCostTracker = new CostTracker();
 
-  const soul = AGENT_SOULS[agentCard.id] || agentCard.description;
+  let soul = AGENT_SOULS[agentCard.id] || agentCard.description;
+
+  // 动态注入绑定的 Skills
+  if (skillsRegistry && agentCard.capabilities.skills?.length > 0) {
+    const loadedSkills = await Promise.all(
+      agentCard.capabilities.skills.map(id => skillsRegistry.getSkill(id))
+    );
+    const validSkills = loadedSkills.filter(s => !!s);
+    if (validSkills.length > 0) {
+      soul += '\n\n## 附加能力 (Skills)\n你已被赋予以下特殊技能，执行任务时请严格遵循其执行步骤：\n';
+      validSkills.forEach(s => {
+        soul += `\n### Skill: ${s!.name}\n${s!.description}\n\n${s!.body}\n`;
+      });
+    }
+  }
 
   const loopEvents: LoopEventHandler = {
     onIteration: (i) => events?.onAgentProgress?.(agentCard.id, i),
@@ -358,6 +398,7 @@ async function runSingleAgent(
   pool: AgentPool,
   userMessage: string,
   costTracker: CostTracker,
+  skillsRegistry: SkillsRegistry | undefined,
   events?: OrchestratorEventHandler,
 ): Promise<OrchestratorResult> {
   const agent = pool.getAgent('research-agent')!;
@@ -372,11 +413,27 @@ async function runSingleAgent(
   const traceWriter = new TraceWriter(`./traces/single-${Date.now()}.jsonl`);
   const localCostTracker = new CostTracker();
 
+  let soul = AGENT_SOULS[agent.id] || agent.description;
+
+  // 动态注入绑定的 Skills
+  if (skillsRegistry && agent.capabilities.skills?.length > 0) {
+    const loadedSkills = await Promise.all(
+      agent.capabilities.skills.map(id => skillsRegistry.getSkill(id))
+    );
+    const validSkills = loadedSkills.filter(s => !!s);
+    if (validSkills.length > 0) {
+      soul += '\n\n## 附加能力 (Skills)\n你已被赋予以下特殊技能，执行任务时请严格遵循其执行步骤：\n';
+      validSkills.forEach(s => {
+        soul += `\n### Skill: ${s!.name}\n${s!.description}\n\n${s!.body}\n`;
+      });
+    }
+  }
+
   const result = await runAgentLoop(
     {
       id: agent.id,
       name: agent.name,
-      systemPrompt: AGENT_SOULS[agent.id] || agent.description,
+      systemPrompt: soul,
       provider,
       model,
       tools,
