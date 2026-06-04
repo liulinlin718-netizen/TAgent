@@ -10,6 +10,38 @@
  * 架构参考：Codex CLI App Server, Hermes-Team 双通道
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
+
+// Load .env first
+const envPath = path.resolve(process.cwd(), 'packages/tagent-server/.env');
+try {
+  const envContent = fs.readFileSync(envPath, 'utf-8');
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx > 0) {
+      process.env[trimmed.slice(0, eqIdx)] = trimmed.slice(eqIdx + 1);
+    }
+  }
+} catch {
+  // If running from packages/tagent-server directly
+  try {
+    const envContent = fs.readFileSync(path.resolve(process.cwd(), '.env'), 'utf-8');
+    for (const line of envContent.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx > 0) {
+        process.env[trimmed.slice(0, eqIdx)] = trimmed.slice(eqIdx + 1);
+      }
+    }
+  } catch {
+    // Ignore
+  }
+}
+
 import { serve } from '@hono/node-server';
 import { createNodeWebSocket } from '@hono/node-ws';
 import { Hono } from 'hono';
@@ -28,12 +60,14 @@ import {
   CronScheduler,
   MetricsCollector,
   SnapshotManager,
+  createPersistence,
+  RedisCache,
 } from '@tagent/core';
-import type { OrchestratorEventHandler } from '@tagent/core';
+import type { OrchestratorEventHandler, PersistenceAdapter } from '@tagent/core';
 import { store } from './store.js';
 import type { ChatMessage, TraceEvent } from './store.js';
 import { governanceStore } from './governance-store.js';
-import * as path from 'path';
+
 
 const workspaceRoot = path.resolve(process.cwd(), '../..');
 const agentPool = new AgentPool();
@@ -44,6 +78,22 @@ const heartbeat = new HeartbeatMonitor();
 const cron = new CronScheduler();
 const metrics = new MetricsCollector();
 const snapshots = new SnapshotManager();
+
+// §5.2: Persistence — 根据 DATABASE_URL 自动选择 PostgreSQL 或文件
+const persistence: PersistenceAdapter = createPersistence(workspaceRoot);
+console.log(`[Persistence] ${process.env.DATABASE_URL ? 'PostgreSQL' : 'File'} adapter`);
+
+// §5.2: Redis Cache — 可选，连接失败不影响服务
+let redisCache: RedisCache | null = null;
+if (process.env.REDIS_URL) {
+  redisCache = new RedisCache(process.env.REDIS_URL);
+  redisCache.connect().then(() => {
+    console.log('[Redis] Connected');
+  }).catch(() => {
+    console.warn('[Redis] Connection failed, running without cache');
+    redisCache = null;
+  });
+}
 
 // 初始化 agent 池配置 (加载持久化的 skills 和 tools 绑定)
 await agentPool.initialize(workspaceRoot);
@@ -88,11 +138,16 @@ app.use('*', cors({
   allowHeaders: ['Content-Type'],
 }));
 
-app.get('/api/health', (c) => c.json({
-  status: 'ok',
-  timestamp: new Date().toISOString(),
-  provider: process.env.DEEPSEEK_API_KEY ? 'deepseek' : process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'none',
-}));
+app.get('/api/health', async (c) => {
+  const redisOk = redisCache ? await redisCache.ping() : false;
+  return c.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    provider: process.env.DEEPSEEK_API_KEY ? 'deepseek' : process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'none',
+    persistence: process.env.DATABASE_URL ? 'postgresql' : 'file',
+    redis: redisOk ? 'connected' : 'unavailable',
+  });
+});
 
 // ─── Workspace API ───────────────────────────────────
 
@@ -175,6 +230,7 @@ app.post('/api/workspaces/:wsId/sessions/:sessId/fork', async (c) => {
     if (!sourceSession) return c.json({ error: 'Source session not found' }, 404);
     
     // Generate summary using LLM
+    const { provider, model } = createProvider();
     const historyText = sourceSession.messages.map(m => `${m.role}: ${m.content}`).join('\n');
     const response = await provider.call({
       model,
@@ -199,7 +255,7 @@ app.post('/api/workspaces/:wsId/sessions/:sessId/fork', async (c) => {
 app.post('/api/workspaces/:wsId/sessions/:sessId/merge-to-parent', async (c) => {
   const wsId = c.req.param('wsId');
   const sessId = c.req.param('sessId');
-  const body = await c.req.json<{ text?: string }>().catch(() => ({}));
+  const body = await c.req.json<{ text?: string }>().catch(() => ({ text: undefined }));
 
   const childSession = store.getSession(wsId, sessId);
   if (!childSession || !childSession.parentSessionId) {
@@ -214,6 +270,7 @@ app.post('/api/workspaces/:wsId/sessions/:sessId/merge-to-parent', async (c) => 
   let summaryText = body.text;
   if (!summaryText) {
     // Generate summary of child branch using LLM
+    const { provider, model } = createProvider();
     const historyText = childSession.messages.map(m => `${m.role}: ${m.content}`).join('\n');
     const response = await provider.call({
       model,
@@ -268,6 +325,7 @@ interface RunRequest {
   message: string;
   workspaceId?: string;
   sessionId?: string;
+  governanceTemplate?: 'standard' | 'strict_cost' | 'quality_first';
 }
 
 app.post('/api/agent/run', async (c) => {
@@ -766,7 +824,6 @@ if (defaultWs) {
 }
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-serve({ fetch: app.fetch, port: PORT }, (info) => {
-  // D7: 注入 WebSocket 升级
-  injectWebSocket(info.server);
-});
+const server = serve({ fetch: app.fetch, port: PORT });
+// D7: 注入 WebSocket 升级
+injectWebSocket(server);

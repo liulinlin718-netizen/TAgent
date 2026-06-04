@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { LazyMotion, domAnimation, m, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
+import { PulseOrb } from '../components/PulseOrb';
 import styles from './page.module.css';
 
 const WorkflowPanel = dynamic(() => import('./WorkflowPanel'), { ssr: false });
@@ -63,8 +64,14 @@ export default function AppPage() {
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [theme, setTheme] = useState<'light' | 'dark'>('light'); // Theme state
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // ── Sync Theme ──
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
 
   // ── Load Workspaces ──
   const loadWorkspaces = useCallback(async () => {
@@ -265,27 +272,39 @@ export default function AppPage() {
         {/* Logo */}
         <div className={styles.sidebarHeader}>
           <div className={styles.logo}>
-            <span className={styles.logoIcon}>⚡</span>
+            <div className={styles.logoDotGrid}>
+              <div className={styles.logoDot} />
+              <div className={styles.logoDot} />
+              <div className={styles.logoDot} />
+              <div className={styles.logoDot} />
+            </div>
             <span className={styles.logoText}>TAgent</span>
           </div>
-          <button className={styles.iconBtn} onClick={() => setSidebarOpen(!sidebarOpen)} title="收起侧栏">
-            {sidebarOpen ? '◀' : '▶'}
+          <button className={styles.iconBtn} onClick={() => setSidebarOpen(!sidebarOpen)} title="Toggle Sidebar">
+            {sidebarOpen ? (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+            )}
           </button>
         </div>
 
         {sidebarOpen && (
           <>
-            {/* 常驻 Agent (plan §3.2: 常驻态) */}
+            {/* 常驻 Agent */}
             <div className={styles.sidebarSection}>
               <div className={styles.sectionTitle}>📋 常驻 Agent</div>
-              <div className={styles.agentList}>
+              <div>
                 {[
                   { icon: '🔍', name: '研究助手' },
                   { icon: '📄', name: '文档助手' },
                   { icon: '📊', name: '数据分析' },
                 ].map(a => (
-                  <div key={a.name} className={styles.agentItem}>
-                    <span className={styles.agentDot} />
+                  <div key={a.name} className={styles.listItem}>
                     <span>{a.icon} {a.name}</span>
                   </div>
                 ))}
@@ -301,7 +320,7 @@ export default function AppPage() {
               {workspaces.map(ws => (
                 <button
                   key={ws.id}
-                  className={`${styles.wsItem} ${ws.id === activeWsId ? styles.wsItemActive : ''}`}
+                  className={`${styles.listItem} ${ws.id === activeWsId ? styles.listItemActive : ''}`}
                   onClick={() => { setActiveWsId(ws.id); setActiveSessId(''); setMessages([]); }}
                 >
                   {ws.name}
@@ -319,24 +338,33 @@ export default function AppPage() {
                 {sessions.map(sess => (
                   <button
                     key={sess.id}
-                    className={`${styles.sessItem} ${sess.id === activeSessId ? styles.sessItemActive : ''}`}
+                    className={`${styles.listItem} ${sess.id === activeSessId ? styles.listItemActive : ''}`}
                     onClick={() => switchSession(sess.id)}
                   >
                     <span className={styles.sessTitle}>{sess.title}</span>
                     {sess.totalCost > 0 && (
-                      <span className={styles.sessCost}>${sess.totalCost.toFixed(4)}</span>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--color-text-muted)' }}>
+                        ${sess.totalCost.toFixed(4)}
+                      </span>
                     )}
                   </button>
                 ))}
                 {sessions.length === 0 && (
-                  <div className={styles.emptyHint}>点击 + 创建新对话</div>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', textAlign: 'center', padding: 'var(--space-2)' }}>
+                    点击 + 创建新对话
+                  </div>
                 )}
               </div>
             )}
 
-            {/* 快捷操作 */}
+            {/* Theme Toggle & Footer */}
             <div className={styles.sidebarFooter}>
-              <div className={styles.badge}>Phase 2</div>
+              <button 
+                className={styles.themeToggle} 
+                onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
+              >
+                {theme === 'light' ? '🌙 暗色模式' : '☀️ 亮色模式'}
+              </button>
             </div>
           </>
         )}
@@ -360,17 +388,42 @@ export default function AppPage() {
         <div className={styles.messages}>
           {messages.length === 0 && (
             <div className={styles.welcome}>
-              <m.div className={styles.welcomeIcon}
-                initial={{ scale: 0 }} animate={{ scale: 1 }}
-                transition={{ type: 'spring', stiffness: 200 }}
-              >⚡</m.div>
-              <h1 className={styles.welcomeTitle}>TAgent</h1>
-              <p className={styles.welcomeSubtitle}>AI 办公协作助手 — 让 Agent 为你工作</p>
+              {/* 浮动装饰 blob ← converge.ai */}
+              <div className={`${styles.blob} ${styles.blob1}`} />
+              <div className={`${styles.blob} ${styles.blob2}`} />
+
+              {/* 脉动光球 ← mycalmsite */}
+              <m.div
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 150, delay: 0.2 }}
+                className={styles.heroOrb}
+              >
+                <PulseOrb status="busy" size="lg" />
+              </m.div>
+
+              {/* 标题 ← x.ai Hero */}
+              <h1 className={styles.welcomeTitle}>
+                Intelligence <br /><span>Working Together.</span>
+              </h1>
+              <p className={styles.welcomeSubtitle}>
+                A beautiful, high-performance orchestration interface for Multi-Agent collaboration. 
+              </p>
+
+              {/* 胶囊建议 ← converge.ai pill CTA */}
               <div className={styles.suggestions}>
-                {['帮我做一份支付Agent竞品分析报告', '搜索最新的 AI Agent 框架', '了解 MCP 协议的发展'].map(s => (
-                  <button key={s} className={styles.suggestion}
-                    onClick={() => { setInput(s); inputRef.current?.focus(); }}
-                  >{s}</button>
+                {[
+                  { icon: '📊', text: '帮我做竞品分析报告' },
+                  { icon: '🔍', text: '搜索 AI Agent 框架' },
+                  { icon: '📝', text: '生成本周团队周报' },
+                ].map(s => (
+                  <button key={s.text} className={styles.suggestion}
+                    onClick={() => { setInput(s.text); inputRef.current?.focus(); }}
+                  >
+                    <span className={styles.suggestionIcon}>{s.icon}</span>
+                    {s.text}
+                    <span className={styles.suggestionArrow}>→</span>
+                  </button>
                 ))}
               </div>
             </div>
@@ -432,7 +485,13 @@ export default function AppPage() {
             <button className={styles.sendButton}
               onClick={sendMessage} disabled={isRunning || !input.trim()}
             >
-              {isRunning ? <span className={styles.spinner}>◌</span> : '→'}
+              {isRunning ? (
+                <div className={styles.spinner} />
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
             </button>
           </div>
         </footer>

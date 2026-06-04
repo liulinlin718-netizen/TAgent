@@ -1,3 +1,6 @@
+/* MCP Management V2.0 */
+/* Design: glassmorphism + pill system */
+
 .container {
   display: flex;
   flex-direction: column;
@@ -13,61 +16,68 @@
 }
 
 .title {
-  font-size: 2rem;
-  font-weight: 700;
+  font-size: var(--text-section);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--tracking-tighter);
   margin: 0 0 8px 0;
-  background: linear-gradient(90deg, var(--foreground) 0%, var(--text-secondary) 100%);
+  background: linear-gradient(135deg, var(--color-text-primary) 0%, var(--color-text-secondary) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .subtitle {
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--text-base);
 }
 
+/* 胶囊按钮 ← converge.ai */
 .primaryButton {
   display: flex;
   align-items: center;
   gap: 8px;
-  background-color: var(--primary);
+  background: var(--color-accent-primary);
   color: white;
   border: none;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
+  padding: 0.625rem 1.5rem;
+  border-radius: var(--radius-pill);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-sm);
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(29, 78, 216, 0.3);
+  box-shadow: 0 4px 15px rgba(124, 107, 196, 0.3);
 }
 
 .primaryButton:hover {
-  background-color: var(--primary-hover);
+  background: var(--color-accent-primary-hover);
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(29, 78, 216, 0.4);
+  box-shadow: 0 6px 20px rgba(124, 107, 196, 0.4);
 }
 
 .serverList {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
+/* Glassmorphism 服务器卡片 */
 .serverCard {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background-color: var(--surface-light);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  background: var(--panel-glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--panel-glass-border);
+  border-radius: var(--radius-card);
   padding: 20px 24px;
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
 }
 
 .serverCard:hover {
-  border-color: var(--border-hover);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+  border-color: var(--glow-border);
+  box-shadow: var(--glow-shadow);
+  transform: translateY(-2px);
 }
 
 .cardLeft {
@@ -77,14 +87,15 @@
 }
 
 .iconBox {
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
-  background-color: rgba(139, 92, 246, 0.1);
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: rgba(139, 92, 246, 0.1);
   color: #a78bfa;
   display: flex;
   align-items: center;
   justify-content: center;
+  border: 1px solid rgba(139, 92, 246, 0.15);
 }
 
 .serverInfo {
@@ -100,23 +111,25 @@
 }
 
 .serverName {
-  font-size: 1.15rem;
-  font-weight: 600;
+  font-size: 1.125rem;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-tight);
   margin: 0;
-  color: var(--foreground);
+  color: var(--color-text-primary);
 }
 
+/* 胶囊状态 badge */
 .statusBadge {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  padding: 2px 8px;
-  border-radius: 12px;
-  background-color: rgba(16, 185, 129, 0.1);
-  color: var(--success);
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(34, 197, 94, 0.08);
+  color: var(--color-success);
+  border: 1px solid rgba(34, 197, 94, 0.15);
 }
 
 .statusIcon {
@@ -135,66 +148,70 @@
   gap: 12px;
 }
 
+/* 胶囊 type badge */
 .typeBadge {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 6px;
-  background-color: var(--surface-hover);
-  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  background: rgba(124, 107, 196, 0.08);
+  color: var(--color-accent-primary);
+  border: 1px solid rgba(124, 107, 196, 0.12);
 }
 
 .codeSnippet {
-  font-family: monospace;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  background-color: var(--background);
-  padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  background: var(--color-bg-surface);
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--panel-glass-border);
 }
 
 .cardRight {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
+/* Ghost 按钮 ← x.ai */
 .actionButton {
   padding: 8px 16px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  background-color: transparent;
-  color: var(--foreground);
-  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--panel-glass-border);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .actionButton:hover {
-  background-color: var(--surface-hover);
-  border-color: var(--text-secondary);
+  background: rgba(124, 107, 196, 0.08);
+  border-color: var(--glow-border);
+  color: var(--color-text-primary);
 }
 
 .actionButtonDanger {
   padding: 8px 16px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  background-color: transparent;
-  color: var(--error);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  background: transparent;
+  color: var(--color-error);
+  border: 1px solid rgba(239, 68, 68, 0.2);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .actionButtonDanger:hover {
-  background-color: rgba(239, 68, 68, 0.1);
-  border-color: var(--error);
+  background: rgba(239, 68, 68, 0.08);
+  border-color: var(--color-error);
 }
 
 .emptyState {
@@ -204,30 +221,31 @@
   justify-content: center;
   padding: 80px 0;
   text-align: center;
-  background-color: var(--surface-light);
-  border: 1px dashed var(--border);
-  border-radius: 12px;
+  background: var(--panel-glass);
+  border: 1px dashed var(--panel-glass-border);
+  border-radius: var(--radius-card);
 }
 
 .emptyIcon {
-  color: var(--border-hover);
+  color: var(--color-text-muted);
   margin-bottom: 16px;
 }
 
 .emptyState h3 {
-  font-size: 1.2rem;
-  color: var(--foreground);
+  font-size: 1.125rem;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
   margin: 0 0 8px 0;
 }
 
 .emptyState p {
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   margin: 0;
 }
 
 .loading {
   text-align: center;
   padding: 64px 0;
-  color: var(--text-secondary);
-  font-size: 1.1rem;
+  color: var(--color-text-secondary);
+  font-size: var(--text-lg);
 }

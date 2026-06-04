@@ -1,16 +1,23 @@
+/* Management Layout V2.0 */
+/* Design: 宇宙深空 × 有机生命 */
+
 .layout {
   display: flex;
   height: 100vh;
   width: 100vw;
-  background-color: var(--background);
-  color: var(--foreground);
+  background: var(--color-bg-base);
+  color: var(--color-text-primary);
   overflow: hidden;
 }
 
+/* Glassmorphism 侧栏 ← mycalmsite */
 .sidebar {
   width: 250px;
-  background-color: var(--surface-light);
-  border-right: 1px solid var(--border);
+  background: var(--panel-glass);
+  backdrop-filter: var(--panel-glass-blur);
+  -webkit-backdrop-filter: var(--panel-glass-blur);
+  border-right: 1px solid var(--glow-border);
+  box-shadow: inset -1px 0 40px rgba(99, 102, 241, 0.03);
   display: flex;
   flex-direction: column;
   padding: 24px 0;
@@ -18,74 +25,93 @@
 
 .sidebarHeader {
   padding: 0 24px 24px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--panel-glass-border);
 }
 
 .sidebarHeader h2 {
   font-size: 1.2rem;
-  font-weight: 600;
+  font-weight: var(--font-weight-bold);
   margin: 0;
-  color: var(--primary);
+  background: linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .nav {
   display: flex;
   flex-direction: column;
   padding: 16px 12px;
-  gap: 8px;
+  gap: 6px;
   flex-grow: 1;
 }
 
+/* 胶囊导航项 ← mycalmsite mode tabs */
 .navItem {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  color: var(--foreground);
+  padding: 10px 16px;
+  border-radius: var(--radius-pill);
+  color: var(--color-text-secondary);
   text-decoration: none;
-  font-size: 0.95rem;
-  transition: all 0.2s ease;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  transition: all 0.25s ease;
+  border: 1px solid transparent;
 }
 
 .navItem:hover {
-  background-color: var(--surface-hover);
+  background: rgba(124, 107, 196, 0.08);
+  color: var(--color-text-primary);
+  border-color: var(--panel-glass-border);
 }
 
 .navItem.active {
-  background-color: var(--primary);
-  color: white;
-  font-weight: 500;
+  background: rgba(124, 107, 196, 0.15);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
+  border-color: var(--glow-border);
+  box-shadow: var(--glow-shadow);
 }
 
 .navItem.active svg {
-  color: white;
+  color: var(--color-accent-primary);
 }
 
 .sidebarFooter {
   padding: 24px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--panel-glass-border);
 }
 
 .backButton {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--text-secondary);
+  color: var(--color-text-muted);
   text-decoration: none;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
   transition: color 0.2s;
 }
 
 .backButton:hover {
-  color: var(--foreground);
+  color: var(--color-accent-primary);
 }
 
+/* 主内容区 + 微弱网格纹理 */
 .mainContent {
   flex-grow: 1;
   padding: 32px 48px;
   overflow-y: auto;
   position: relative;
-  /* subtle gradient background for main content area to make it look premium */
-  background: radial-gradient(circle at top right, rgba(29, 78, 216, 0.05), transparent 400px), var(--background);
+  background:
+    radial-gradient(ellipse at top right, var(--aurora-purple), transparent 400px),
+    radial-gradient(ellipse at bottom left, var(--aurora-cyan), transparent 300px),
+    var(--color-bg-base);
+  background-image:
+    radial-gradient(ellipse at top right, var(--aurora-purple), transparent 400px),
+    radial-gradient(ellipse at bottom left, var(--aurora-cyan), transparent 300px),
+    linear-gradient(rgba(99, 102, 241, 0.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 102, 241, 0.012) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 50px 50px, 50px 50px;
 }

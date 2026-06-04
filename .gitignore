@@ -26,3 +26,6 @@ Thumbs.db
 
 # Traces (runtime generated)
 *.jsonl
+
+# Docker 本地数据
+data/

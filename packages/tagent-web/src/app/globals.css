@@ -1,4 +1,7 @@
-/* TAgent — Global Styles */
+/* TAgent — Global Styles V3.0 (Premium) */
+
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 
 *,
 *::before,
@@ -9,7 +12,7 @@
 }
 
 html {
-  color-scheme: dark;
+  color-scheme: light dark;
 }
 
 body {
@@ -17,33 +20,74 @@ body {
   background: var(--color-bg-base);
   color: var(--color-text-primary);
   line-height: var(--leading-normal);
+  letter-spacing: var(--tracking-tight);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+  transition: var(--transition-theme);
+}
+
+/* ─── 创新: 极微弱的颗粒噪点 (增加材质高级感) ─── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.025; /* 极低透明度，只在纯色上有一丝质感 */
+}
+[data-theme="dark"] body::before {
+  opacity: 0.035;
+}
+
+/* ─── Aurora 光晕环境光 ← x.ai ─── */
+.aurora-bg {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-aurora);
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 0% 0%, var(--aurora-blue), transparent 60%),
+    radial-gradient(ellipse at 100% 0%, var(--aurora-purple), transparent 60%),
+    radial-gradient(ellipse at 50% 100%, var(--aurora-cyan), transparent 50%);
+  opacity: 0.8;
+  filter: blur(80px);
+  transition: opacity 1s ease;
 }
 
 a {
-  color: var(--color-accent-primary);
-  text-decoration: none;
+  color: var(--color-text-primary);
+  text-decoration: underline;
+  text-decoration-color: var(--border-light);
+  text-underline-offset: 4px;
+  transition: all var(--transition-fast);
 }
 
 a:hover {
-  color: var(--color-accent-primary-hover);
+  color: var(--color-accent-secondary);
+  text-decoration-color: var(--color-accent-secondary);
 }
 
 code, pre {
   font-family: var(--font-mono);
+  font-size: 0.9em;
 }
 
 ::selection {
-  background: var(--color-accent-primary);
-  color: white;
+  background: rgba(0, 0, 0, 0.1);
+  color: var(--color-text-primary);
+}
+[data-theme="dark"] ::selection {
+  background: rgba(255, 255, 255, 0.2);
 }
 
-/* Scrollbar */
+/* ─── 高级感极简滚动条 ─── */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 
 ::-webkit-scrollbar-track {
@@ -51,10 +95,10 @@ code, pre {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-text-muted);
-  border-radius: var(--radius-full);
+  background: var(--border-light);
+  border-radius: var(--radius-pill);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-secondary);
+  background: var(--border-focus);
 }

@@ -1,3 +1,6 @@
+/* Agent Management V2.0 */
+/* Design: x.ai capability cards + mycalmsite glow */
+
 .container {
   display: flex;
   flex-direction: column;
@@ -13,43 +16,50 @@
 }
 
 .title {
-  font-size: 2rem;
-  font-weight: 700;
+  font-size: var(--text-section);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--tracking-tighter);
   margin: 0 0 8px 0;
-  background: linear-gradient(90deg, var(--foreground) 0%, var(--text-secondary) 100%);
+  background: linear-gradient(135deg, var(--color-text-primary) 0%, var(--color-text-secondary) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .subtitle {
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--text-base);
 }
 
 .agentGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
-  gap: 24px;
+  gap: 20px;
 }
 
+/* x.ai cap-card style */
 .agentCard {
-  background-color: var(--surface-light);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 24px;
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  transition: all 0.3s ease;
-  position: relative;
+  padding: 24px;
   overflow: hidden;
+  /* Glassmorphism */
+  background: var(--panel-glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--panel-glass-border);
+  border-radius: var(--radius-card);
+  transition: all 0.4s ease;
 }
 
 .agentCard:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
-  border-color: var(--border-hover);
+  border-color: var(--glow-border);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.2),
+    var(--glow-shadow);
 }
 
 .cardHeader {
@@ -62,13 +72,14 @@
 .agentAvatar {
   width: 48px;
   height: 48px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, rgba(29, 78, 216, 0.1), rgba(29, 78, 216, 0.2));
-  color: var(--primary);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(124, 107, 196, 0.15), rgba(124, 107, 196, 0.25));
+  color: var(--color-accent-primary);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.5rem;
+  border: 1px solid rgba(124, 107, 196, 0.15);
 }
 
 .agentInfo {
@@ -76,55 +87,60 @@
 }
 
 .agentName {
-  font-size: 1.25rem;
-  font-weight: 600;
+  font-size: 1.125rem;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-tight);
   margin: 0 0 4px 0;
-  color: var(--foreground);
+  color: var(--color-text-primary);
 }
 
+/* 胶囊 badge */
 .agentType {
-  font-size: 0.8rem;
-  font-weight: 500;
-  padding: 2px 8px;
-  border-radius: 12px;
-  background-color: rgba(29, 78, 216, 0.1);
-  color: var(--primary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(124, 107, 196, 0.1);
+  color: var(--color-accent-primary);
+  border: 1px solid rgba(124, 107, 196, 0.15);
 }
 
+/* PulseOrb 替代普通圆点 */
 .statusDot {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background-color: var(--success);
-  box-shadow: 0 0 8px var(--success);
+  background: var(--color-success);
+  box-shadow: 0 0 10px var(--color-success);
 }
 
 .statusDot[title="busy"] {
-  background-color: var(--warning);
-  box-shadow: 0 0 8px var(--warning);
-  animation: pulse 1.5s infinite;
+  background: var(--color-agent-busy);
+  box-shadow: 0 0 10px var(--color-agent-busy);
+  animation: agentPulse 1.5s infinite;
 }
 
-@keyframes pulse {
-  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.7); }
-  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(234, 179, 8, 0); }
-  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(234, 179, 8, 0); }
+@keyframes agentPulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(124, 107, 196, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(124, 107, 196, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(124, 107, 196, 0); }
 }
 
 .description {
-  font-size: 0.95rem;
-  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
   margin: 0;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .radarContainer {
   height: 220px;
   width: 100%;
   margin: 8px 0;
-  background-color: var(--surface);
-  border-radius: 12px;
+  background: rgba(124, 107, 196, 0.03);
+  border-radius: var(--radius-card);
   padding: 8px;
+  border: 1px solid var(--panel-glass-border);
 }
 
 .capabilitiesList {
@@ -140,52 +156,61 @@
 }
 
 .capTitle {
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
   margin: 0;
-  color: var(--foreground);
+  color: var(--color-text-primary);
   display: flex;
   align-items: center;
   gap: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
+/* 胶囊 tag */
 .tag {
-  font-size: 0.75rem;
-  padding: 4px 10px;
-  border-radius: 6px;
-  background-color: var(--surface-hover);
-  border: 1px solid var(--border);
-  color: var(--foreground);
+  font-size: var(--text-xs);
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(124, 107, 196, 0.06);
+  border: 1px solid var(--panel-glass-border);
+  color: var(--color-text-secondary);
+  transition: all 0.2s;
+}
+
+.tag:hover {
+  border-color: var(--glow-border);
+  color: var(--color-text-primary);
 }
 
 .emptyTag {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
   font-style: italic;
 }
 
 .toolTag {
-  font-size: 0.75rem;
-  padding: 4px 10px;
-  border-radius: 6px;
-  background-color: rgba(16, 185, 129, 0.1);
-  color: var(--success);
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  font-size: var(--text-xs);
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(34, 197, 94, 0.08);
+  color: var(--color-success);
+  border: 1px solid rgba(34, 197, 94, 0.15);
 }
 
 .mcpTag {
-  font-size: 0.75rem;
-  padding: 4px 10px;
-  border-radius: 6px;
-  background-color: rgba(139, 92, 246, 0.1);
+  font-size: var(--text-xs);
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(139, 92, 246, 0.08);
   color: #a78bfa;
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  border: 1px solid rgba(139, 92, 246, 0.15);
 }
 
 .governanceConstraints {
@@ -194,25 +219,25 @@
   gap: 8px;
   margin-top: 8px;
   padding-top: 16px;
-  border-top: 1px dashed var(--border);
-  font-size: 0.8rem;
-  color: var(--text-secondary);
+  border-top: 1px solid var(--panel-glass-border);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
 }
 
 .shieldIcon {
-  color: var(--warning);
+  color: var(--color-warning);
 }
 
 .loading {
   text-align: center;
   padding: 64px 0;
-  color: var(--text-secondary);
-  font-size: 1.1rem;
+  color: var(--color-text-secondary);
+  font-size: var(--text-lg);
 }
 
 .splitView {
   display: flex;
-  gap: 32px;
+  gap: 24px;
   align-items: flex-start;
 }
 
@@ -220,47 +245,50 @@
   flex-grow: 1;
 }
 
+/* Glassmorphism skills sidebar */
 .skillsSidebar {
   width: 280px;
   flex-shrink: 0;
-  background-color: var(--surface-light);
-  border: 1px solid var(--border);
-  border-radius: 16px;
+  background: var(--panel-glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--panel-glass-border);
+  border-radius: var(--radius-card);
   padding: 20px;
   position: sticky;
   top: 24px;
 }
 
 .sidebarTitle {
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-semibold);
   margin: 0 0 16px 0;
-  color: var(--foreground);
+  color: var(--color-text-primary);
 }
 
 .skillList {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
+/* 可拖拽 Skill 胶囊 */
 .draggableSkill {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
-  background-color: var(--background);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 0.9rem;
+  padding: 10px 14px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--panel-glass-border);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
   cursor: grab;
   transition: all 0.2s;
   user-select: none;
 }
 
 .draggableSkill:hover {
-  border-color: var(--primary);
-  box-shadow: 0 4px 12px rgba(29, 78, 216, 0.1);
+  border-color: var(--glow-border);
+  box-shadow: var(--glow-shadow);
 }
 
 .draggableSkill:active {
@@ -272,27 +300,27 @@
 }
 
 .dragOverlay {
-  background-color: var(--surface-light);
-  border-color: var(--primary);
-  box-shadow: 0 8px 24px rgba(29, 78, 216, 0.2);
+  background: var(--panel-glass);
+  border-color: var(--color-accent-primary);
+  box-shadow: 0 8px 30px rgba(124, 107, 196, 0.25);
   transform: scale(1.05);
 }
 
 .dragHandle {
-  color: var(--text-secondary);
+  color: var(--color-text-muted);
 }
 
 .skillCategory {
   margin-left: auto;
-  font-size: 0.7rem;
-  background-color: var(--surface-hover);
-  padding: 2px 6px;
-  border-radius: 12px;
-  color: var(--text-secondary);
+  font-size: 0.65rem;
+  background: rgba(124, 107, 196, 0.1);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  color: var(--color-accent-primary);
 }
 
 .agentCardOver {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.2);
-  transform: scale(1.02);
+  border-color: var(--color-accent-primary);
+  box-shadow: 0 0 0 3px rgba(124, 107, 196, 0.15);
+  transform: scale(1.01);
 }

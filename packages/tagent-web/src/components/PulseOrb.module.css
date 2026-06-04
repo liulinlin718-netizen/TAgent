@@ -1,0 +1,162 @@
+/*
+ * PulseOrb — 脉动光球样式
+ * 灵感: mycalmsite breathing orb
+ */
+
+/* ─── Container ─── */
+.orb {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ─── Sizes ─── */
+.sm { width: 24px; height: 24px; }
+.md { width: 48px; height: 48px; }
+.lg { width: 120px; height: 120px; }
+
+/* ─── Core (渐变核心) ─── */
+.core {
+  position: absolute;
+  border-radius: 50%;
+  transition: transform 3s ease-in-out, box-shadow 3s ease-in-out;
+  z-index: 4;
+}
+.sm .core { width: 10px; height: 10px; }
+.md .core { width: 20px; height: 20px; }
+.lg .core { width: 50px; height: 50px; }
+
+/* ─── Rings (同心环) ─── */
+.ring1, .ring2, .ring3 {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid;
+  transition: var(--transition-theme);
+}
+
+.sm .ring1 { width: 16px; height: 16px; }
+.sm .ring2 { width: 20px; height: 20px; }
+.sm .ring3 { width: 24px; height: 24px; }
+
+.md .ring1 { width: 30px; height: 30px; }
+.md .ring2 { width: 38px; height: 38px; }
+.md .ring3 { width: 48px; height: 48px; }
+
+.lg .ring1 { width: 70px; height: 70px; }
+.lg .ring2 { width: 90px; height: 90px; }
+.lg .ring3 { width: 120px; height: 120px; }
+
+/* ─── Glow (背景辉光) ─── */
+.glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(20px);
+  pointer-events: none;
+  z-index: 1;
+  transition: var(--transition-theme);
+}
+.sm .glow { width: 30px; height: 30px; }
+.md .glow { width: 60px; height: 60px; }
+.lg .glow { width: 150px; height: 150px; }
+
+/* ═══════════════════════════════════════
+   Status: IDLE — 缓慢呼吸
+   ═══════════════════════════════════════ */
+.idle .core {
+  background: radial-gradient(circle, rgba(107, 104, 128, 0.7), rgba(107, 104, 128, 0.2));
+  box-shadow: 0 0 15px rgba(107, 104, 128, 0.2);
+  animation: breatheIdle 5s ease-in-out infinite;
+}
+.idle .ring1 { border-color: rgba(107, 104, 128, 0.15); }
+.idle .ring2 { border-color: rgba(107, 104, 128, 0.10); }
+.idle .ring3 { border-color: rgba(107, 104, 128, 0.05); }
+.idle .glow {
+  background: radial-gradient(circle, rgba(107, 104, 128, 0.1), transparent 70%);
+}
+
+@keyframes breatheIdle {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+
+/* ═══════════════════════════════════════
+   Status: BUSY — 快速脉动 + 强光晕
+   ═══════════════════════════════════════ */
+.busy .core {
+  background: radial-gradient(circle, rgba(124, 107, 196, 0.9), rgba(99, 102, 241, 0.4));
+  box-shadow: 0 0 30px rgba(124, 107, 196, 0.5);
+  animation: pulseBusy 1.5s ease-in-out infinite;
+}
+.busy .ring1 {
+  border-color: rgba(124, 107, 196, 0.3);
+  animation: ringPulse 1.5s ease-in-out infinite;
+}
+.busy .ring2 {
+  border-color: rgba(124, 107, 196, 0.2);
+  animation: ringPulse 1.5s ease-in-out infinite 0.2s;
+}
+.busy .ring3 {
+  border-color: rgba(124, 107, 196, 0.1);
+  animation: ringPulse 1.5s ease-in-out infinite 0.4s;
+}
+.busy .glow {
+  background: radial-gradient(circle, rgba(124, 107, 196, 0.2), transparent 70%);
+  animation: glowPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulseBusy {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 20px rgba(124, 107, 196, 0.4); }
+  50% { transform: scale(1.3); box-shadow: 0 0 40px rgba(124, 107, 196, 0.6); }
+}
+
+@keyframes ringPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.1); opacity: 0.6; }
+}
+
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* ═══════════════════════════════════════
+   Status: WAITING — 黄色调 + 呼吸
+   ═══════════════════════════════════════ */
+.waiting .core {
+  background: radial-gradient(circle, rgba(245, 158, 11, 0.8), rgba(245, 158, 11, 0.3));
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+  animation: breatheWait 3s ease-in-out infinite;
+}
+.waiting .ring1 { border-color: rgba(245, 158, 11, 0.2); }
+.waiting .ring2 { border-color: rgba(245, 158, 11, 0.12); }
+.waiting .ring3 { border-color: rgba(245, 158, 11, 0.06); }
+.waiting .glow {
+  background: radial-gradient(circle, rgba(245, 158, 11, 0.12), transparent 70%);
+}
+
+@keyframes breatheWait {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+/* ═══════════════════════════════════════
+   Status: ERROR — 红色 + 闪烁
+   ═══════════════════════════════════════ */
+.error .core {
+  background: radial-gradient(circle, rgba(239, 68, 68, 0.9), rgba(239, 68, 68, 0.3));
+  box-shadow: 0 0 25px rgba(239, 68, 68, 0.4);
+  animation: flashError 1s ease-in-out infinite;
+}
+.error .ring1 { border-color: rgba(239, 68, 68, 0.25); }
+.error .ring2 { border-color: rgba(239, 68, 68, 0.15); }
+.error .ring3 { border-color: rgba(239, 68, 68, 0.08); }
+.error .glow {
+  background: radial-gradient(circle, rgba(239, 68, 68, 0.15), transparent 70%);
+}
+
+@keyframes flashError {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.9); }
+}

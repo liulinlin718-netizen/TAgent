@@ -1,3 +1,6 @@
+/* Skills Management V2.0 */
+/* Design: x.ai capability cards + converge.ai search box */
+
 .container {
   display: flex;
   flex-direction: column;
@@ -12,42 +15,48 @@
   align-items: center;
 }
 
+/* ← x.ai section title */
 .title {
-  font-size: 2rem;
-  font-weight: 700;
+  font-size: var(--text-section);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--tracking-tighter);
   margin: 0 0 8px 0;
-  background: linear-gradient(90deg, var(--foreground) 0%, var(--text-secondary) 100%);
+  background: linear-gradient(135deg, var(--color-text-primary) 0%, var(--color-text-secondary) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .subtitle {
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--text-base);
 }
 
+/* 胶囊按钮 ← converge.ai pill CTA */
 .primaryButton {
   display: flex;
   align-items: center;
   gap: 8px;
-  background-color: var(--primary);
+  background: var(--color-accent-primary);
   color: white;
   border: none;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
+  padding: 0.625rem 1.5rem;
+  border-radius: var(--radius-pill);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-sm);
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(29, 78, 216, 0.3);
+  box-shadow: 0 4px 15px rgba(124, 107, 196, 0.3);
 }
 
 .primaryButton:hover {
-  background-color: var(--primary-hover);
+  background: var(--color-accent-primary-hover);
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(29, 78, 216, 0.4);
+  box-shadow: 0 6px 20px rgba(124, 107, 196, 0.4);
 }
 
+/* 搜索栏 ← converge.ai search */
 .searchBar {
   position: relative;
   width: 100%;
@@ -56,65 +65,77 @@
 
 .searchIcon {
   position: absolute;
-  left: 16px;
+  left: 18px;
   top: 50%;
   transform: translateY(-50%);
-  color: var(--text-secondary);
+  color: var(--color-text-muted);
 }
 
 .searchInput {
   width: 100%;
-  padding: 16px 16px 16px 48px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background-color: var(--surface-light);
-  color: var(--foreground);
-  font-size: 1rem;
+  padding: 14px 16px 14px 50px;
+  border-radius: 24px;
+  border: 1px solid var(--panel-glass-border);
+  background: var(--panel-glass);
+  backdrop-filter: blur(12px);
+  color: var(--color-text-primary);
+  font-size: var(--text-base);
+  font-family: inherit;
   transition: all 0.2s;
 }
 
 .searchInput:focus {
   outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.1);
-  background-color: var(--surface);
+  border-color: rgba(124, 107, 196, 0.3);
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.08);
 }
 
+.searchInput::placeholder {
+  color: var(--color-text-muted);
+}
+
+/* 能力卡片网格 ← x.ai 2x2 grid */
 .bentoGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 24px;
+  gap: 20px;
 }
 
+/* x.ai cap-card style */
 .bentoCard {
-  background-color: var(--surface-light);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 24px;
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  transition: all 0.3s ease;
-  position: relative;
+  padding: 24px;
   overflow: hidden;
+  border-radius: var(--radius-card);
+  /* Glassmorphism */
+  background: var(--panel-glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--panel-glass-border);
+  transition: all 0.4s ease;
 }
 
+/* 顶部渐变条 */
 .bentoCard::before {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 4px;
-  background: linear-gradient(90deg, var(--primary), var(--primary-hover));
+  height: 3px;
+  background: linear-gradient(90deg, var(--color-accent-primary), var(--color-accent-secondary));
   opacity: 0;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.4s ease;
 }
 
 .bentoCard:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
-  border-color: var(--border-hover);
+  border-color: var(--glow-border);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.2),
+    var(--glow-shadow);
 }
 
 .bentoCard:hover::before {
@@ -130,35 +151,39 @@
 .iconWrapper {
   width: 40px;
   height: 40px;
-  border-radius: 10px;
-  background-color: rgba(29, 78, 216, 0.1);
-  color: var(--primary);
+  border-radius: 12px;
+  background: rgba(124, 107, 196, 0.1);
+  color: var(--color-accent-primary);
   display: flex;
   align-items: center;
   justify-content: center;
+  border: 1px solid rgba(124, 107, 196, 0.15);
 }
 
+/* 胶囊 badge */
 .categoryBadge {
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 20px;
-  background-color: var(--surface-hover);
-  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  background: rgba(124, 107, 196, 0.1);
+  color: var(--color-accent-primary);
+  border: 1px solid rgba(124, 107, 196, 0.15);
 }
 
 .cardTitle {
-  font-size: 1.25rem;
-  font-weight: 600;
+  font-size: 1.125rem;
+  font-weight: var(--font-weight-semibold);
   margin: 0;
-  color: var(--foreground);
+  color: var(--color-text-primary);
+  letter-spacing: var(--tracking-tight);
 }
 
 .cardDescription {
-  font-size: 0.95rem;
-  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
   margin: 0;
-  line-height: 1.5;
+  line-height: 1.6;
   flex-grow: 1;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -170,9 +195,9 @@
   display: flex;
   gap: 16px;
   padding-top: 16px;
-  border-top: 1px solid var(--border);
-  font-size: 0.85rem;
-  color: var(--text-secondary);
+  border-top: 1px solid var(--panel-glass-border);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
 }
 
 .metaItem {
@@ -184,6 +209,6 @@
 .loading, .emptyState {
   text-align: center;
   padding: 64px 0;
-  color: var(--text-secondary);
-  font-size: 1.1rem;
+  color: var(--color-text-secondary);
+  font-size: var(--text-lg);
 }
