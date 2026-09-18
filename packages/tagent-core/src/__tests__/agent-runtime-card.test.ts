@@ -19,7 +19,7 @@ const provider = (call: LLMProvider['call']): LLMProvider => ({ name: 'fixture',
 afterEach(() => { vi.restoreAllMocks(); bridge.execute.mockClear(); });
 
 describe('configured office agent execution', () => {
-  it.each([true, false])('keeps evidence scope through drafting, synthesis, review and one revision (single=%s)', async single => {
+  it.each(['fallback', 'single', 'multiple'])('keeps evidence scope through drafting, synthesis, review and one revision (%s)', async mode => {
     const pool = new AgentPool(), agent = pool.getAgent('project-agent')!;
     agent.constraints.allowedTools = [];
     vi.spyOn(pool, 'findBestAgentForTask').mockReturnValue(agent);
@@ -27,7 +27,9 @@ describe('configured office agent execution', () => {
     const draft = '所有阶段均无人负责，必须任命采购负责人后才能开始任何工作。';
     const corrected = '采购审批负责人待定；设计和测试责任人材料未提供，不能据此判断现实无人负责。建议分别确认职责归属。';
     let reviews = 0, revisions = 0, drafts = 0, syntheses = 0;
-    const call = vi.fn<LLMProvider['call']>().mockResolvedValueOnce(reply(single ? '[]' : '[{"id":"p","agentRole":"project","objective":"整理责任缺口"}]'))
+    const tasks = [{ id: 'p', agentRole: 'project', objective: '整理责任缺口' },
+      ...(mode === 'multiple' ? [{ id: 'd', agentRole: 'document', objective: '整理行动建议', dependsOn: ['p'] }] : [])];
+    const call = vi.fn<LLMProvider['call']>().mockResolvedValueOnce(reply(mode === 'fallback' ? '[]' : JSON.stringify(tasks)))
       .mockImplementation(async params => {
         const system = params.messages[0].content;
         expect(system).toContain(OFFICE_MATERIAL_BOUNDARY);
@@ -62,7 +64,8 @@ describe('configured office agent execution', () => {
     expect(result.deliveryReview?.previous?.output).toBe(draft);
     expect(result.deliveryReview?.previous?.review.status).toBe('needs_revision');
     expect(result.deliveryReview?.status).toBe('passed');
-    expect({ reviews, revisions, drafts, syntheses }).toEqual({ reviews: 2, revisions: 1, drafts: 1, syntheses: single ? 0 : 1 });
+    expect({ reviews, revisions, drafts, syntheses }).toEqual({ reviews: 2, revisions: 1,
+      drafts: mode === 'multiple' ? 2 : 1, syntheses: mode === 'multiple' ? 1 : 0 });
     expect(agent.constraints.allowedTools).toEqual([]);
   });
 
@@ -105,7 +108,80 @@ describe('configured office agent execution', () => {
     expect(result.subResults).toHaveLength(1);
     expect(result.deliveryReview).toMatchObject({ status: 'unverified', checks: [], receipt: { status: 'request_failed' } });
     expect(result.deliveryReview?.issues.join()).toContain('任务已中断');
-    expect(call).toHaveBeenCalledTimes(single ? 2 : 3);
+    expect(call).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the complete single-agent deliverable and review lifecycle without a second drafting call', async () => {
+    const pool = new AgentPool();
+    pool.getAgent('document-agent')!.constraints.allowedTools = [];
+    const output = Array.from({ length: 24 }, () => '离线流程合成样例。'.repeat(65)).join('\n\n') + '\n\n完整正文末尾';
+    const timeline: string[] = [];
+    const call = vi.fn<LLMProvider['call']>().mockResolvedValueOnce(reply('[{"id":"d","agentRole":"document","objective":"整理已有样例"}]'))
+      .mockImplementation(async params => {
+        if (params.purpose === 'verification') {
+          timeline.push('review');
+          const input = JSON.parse(params.messages[1].content);
+          expect(input.blocks.at(-1).text).toContain('完整正文末尾');
+          return reply(JSON.stringify({ areas: ['instructions', 'material_consistency', 'arithmetic', 'deliverable', 'actions'].map(area =>
+            ({ area, status: 'passed', reason: '模拟检查，只验证完整正文传递' })),
+            blocks: input.blocks.map((block: { index: number }) => ({ index: block.index, verdict: 'non_factual', reason: '合成样例', evidence: [] })),
+            lengthLimits: [], calculations: [] }));
+        }
+        expect(params.messages[0].content).toContain('本任务由你完成整份交付物');
+        expect(params.tools || []).toEqual([]);
+        return reply(output);
+      });
+    const persist = vi.fn(), done = vi.fn(), delta = vi.fn();
+    const result = await runOrchestrator({ provider: provider(call), model: 'deepseek-chat', agentPool: pool,
+      persistOfficeDelivery: persist }, '整理已有样例，不联网', {
+      onSynthesisStart: () => timeline.push('synthesis'),
+      onTextDelta: delta,
+      onComplete: result => { timeline.push('complete'); done(result); },
+    });
+    expect(output.length).toBeGreaterThan(12000);
+    expect(result.output).toBe(output);
+    expect(result.subResults[0].summary).toHaveLength(12000);
+    expect(result.deliveryReview?.status).toBe('passed');
+    expect(result.success).toBe(true);
+    expect(persist.mock.calls.at(-1)?.[0]).toMatchObject({ output, review: { status: 'passed' } });
+    expect(delta).toHaveBeenCalledWith(output);
+    expect(done).toHaveBeenCalledExactlyOnceWith(result);
+    expect(timeline).toEqual(['synthesis', 'review', 'complete']);
+    expect(call).toHaveBeenCalledTimes(3);
+  });
+
+  it('preserves a direct deliverable as unverified when review fails, without retry or redrafting', async () => {
+    const call = vi.fn<LLMProvider['call']>()
+      .mockResolvedValueOnce(reply('[{"id":"d","agentRole":"document","objective":"整理已有材料"}]'))
+      .mockResolvedValueOnce(reply('已完成的直接交付稿'))
+      .mockRejectedValueOnce(new Error('Review connection failed'));
+    const result = await runOrchestrator({ provider: provider(call), model: 'deepseek-chat' }, '整理已有材料');
+    expect(result.output).toBe('已完成的直接交付稿');
+    expect(result.deliveryReview).toMatchObject({ status: 'unverified', receipt: { status: 'request_failed' } });
+    expect(result.success).toBe(false);
+    expect(call.mock.calls[2][0].purpose).toBe('verification');
+    expect(call).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(['synthesis', 'delta'])('retains the full paid-for direct draft if cancelled at %s before verification', async stage => {
+    const controller = new AbortController();
+    const output = '已完成的合成报告。'.repeat(1500) + '完整报告的末尾';
+    const call = vi.fn<LLMProvider['call']>()
+      .mockResolvedValueOnce(reply('[{"id":"d","agentRole":"document","objective":"整理已有材料"}]'))
+      .mockResolvedValueOnce(reply(output));
+    const done = vi.fn();
+    const result = await runOrchestrator({ provider: provider(call), model: 'deepseek-chat', signal: controller.signal }, '整理已有材料', {
+      onSynthesisStart: () => { if (stage === 'synthesis') controller.abort(); },
+      onTextDelta: () => { if (stage === 'delta') controller.abort(); },
+      onComplete: done,
+    });
+    expect(result.success).toBe(false);
+    expect(result.termination).toBe('cancelled');
+    expect(result.output).toContain(output);
+    expect(result.output).toContain('尚未完成核对');
+    expect(result.deliveryReview).toBeUndefined();
+    expect(done).toHaveBeenCalledExactlyOnceWith(result);
+    expect(call).toHaveBeenCalledTimes(2);
   });
   it.each(['research', 'document', 'data', 'project', 'communication', 'presentation'])('uses the selected %s card rather than the built-in soul', async role => {
     const pool = new AgentPool(), card = pool.getAgent(`${role}-agent`)!;

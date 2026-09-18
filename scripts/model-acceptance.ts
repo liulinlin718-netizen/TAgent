@@ -3,7 +3,8 @@ import { MODEL_PRICING, type LLMCallParams, type LLMProvider, type TokenUsage } 
 export interface AcceptanceLimits { maxCalls: number; maxRecordedCost: number }
 
 export function officeCaseAdmission(snapshot: AcceptanceLimits & { calls: number; unsettledRequests: number }) {
-  // Planning, one worker, synthesis and review; extra workers/revisions can still require more.
+  // Conservative entry floor, not a full-run reservation: a sole office worker can finish in
+  // three calls, but the plan is not known yet; extra workers/revisions may need more than four.
   const minimumCalls = 4;
   const remainingCalls = snapshot.maxCalls - snapshot.calls;
   if (snapshot.unsettledRequests > 0) return { allowed: false, reason: 'unsettled_usage', remainingCalls, minimumCalls };

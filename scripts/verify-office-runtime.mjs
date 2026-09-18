@@ -46,6 +46,7 @@ const rowCase = {
   draft: '| 风险 | 影响 |\n| --- | --- |\n| 前置交付延后 | 后续任务相应顺延 |\n| 人员配置未提供 | 项目无人负责 |',
   revision: '| 风险 | 影响 |\n| --- | --- |\n| 前置交付延后 | 后续任务相应顺延 |\n| 人员配置未提供 | 不能据此判断项目无人负责 |',
 };
+const plannedCases = ['pass', 'repair', 'rows-repair'];
 const exportOutput = '# 季度收入与行动报告\n\n' + finalOutput(310)
   + '\n\n## 二 账单核对\n\n| 月份 | 金额（万元） | 状态 |\n| :--- | ---: | :---: |\n| 1月 | 100 | 待复核 |\n| 2月 | 120 | 待复核 |\n| 3月 | 90 | 甲\\|乙 |'
   + '\n\n## 三 后续行动\n\n3. 核对原始账单\n   - 检查统计口径\n     - [x] 收入相加\n     - [ ] 业务原因待确认\n4. 负责人确认后再对外发送\n\n> 这些数据来自测试材料，不代表实际经营业绩。'
@@ -63,7 +64,8 @@ const modelServer = createServer(async (request, response) => {
     const partialRepair = ['partial-repair', 'partial-still-invalid'].includes(mode);
     let content;
     calls++;
-    if (system.includes('你是任务编排器')) content = '[]';
+    if (system.includes('你是任务编排器')) content = plannedCases.includes(mode)
+      ? JSON.stringify([{ id: 'office-direct', agentRole: 'document', objective: '根据用户给定材料完成整份办公交付物，不联网。' }]) : '[]';
     else if (system.includes('你是办公交付核对器')) {
       assert.ok(!input.tools?.length, 'Review must not call tools');
       if (mode === 'malformed' || mode === 'cut-review') content = '{invalid-review-json';
@@ -175,6 +177,11 @@ try {
     assert.equal(final.persisted, true); assert.ok(final.totalCost > 0);
     assert.equal(trace.filter(event => event.type === 'complete').length, 1);
     assert.ok(trace.some(event => event.data.stage === 'verify'));
+    if (plannedCases.includes(mode)) {
+      assert.equal(trace.filter(event => event.type === 'agent_spawn' && event.taskId === 'office-direct').length, 1);
+      assert.equal(trace.filter(event => event.type === 'synthesis_start').length, 1);
+      assert.ok(trace.some(event => event.agentId === 'orchestrator' && event.data.stage === 'synthesize' && event.summary.includes('完整交付正文')));
+    }
     assert.equal(calls - beforeCalls, mode === 'repair' || mode === 'failed' || partialRepair || groundingCases[mode] || mode === 'absolute-repair' || mode === 'rows-repair' ? 5 : mode === 'cut-revision' ? 4 : 3);
     assert.ok(final.deliveryReview.receipt.rawOutput.length > 0);
     assert.equal(final.deliveryReview.receipt.unsettledRequests, 0);

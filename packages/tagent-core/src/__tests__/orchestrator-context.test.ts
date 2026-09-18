@@ -7,7 +7,7 @@ vi.mock('../trace.js', () => ({ TraceWriter: class { write() {} getPath() { retu
 const answer = (content: string): LLMResponse => ({ content, toolCalls: [], model: 'fixture', stopReason: 'end', usage: { inputTokens: 10, outputTokens: 2, cost: 0 } });
 const history = buildConversationContext('ws', 'session', [{ id: 'history-user', role: 'user', content: 'MATERIAL_1200 全文不超过200字。', timestamp: '2026-09-13' }]);
 describe('conversation references in actual orchestration stages', () => {
-  it.each([false, true])('supplies planning, execution, synthesis and verification (fallback=%s)', async fallback => {
+  it.each([false, true])('supplies planning, execution and verification for a single deliverable (fallback=%s)', async fallback => {
     const pool = new AgentPool();
     const calls: Parameters<LLMProvider['call']>[0][] = [];
     const call = vi.fn<LLMProvider['call']>().mockImplementation(async params => {

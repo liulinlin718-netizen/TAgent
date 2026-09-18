@@ -48,7 +48,8 @@ const modelServer = createServer(async (request, response) => {
   let toolCalls;
   if (system.includes('你是办公交付核对器')) content = fixtureOfficeReview(body.messages);
   else if (planning) content = task.includes('cancel-synthesis')
-    ? JSON.stringify([{ id: 'notes', agentRole: 'document', objective: 'Summarize supplied office notes for cancel-synthesis' }]) : '[]';
+    ? JSON.stringify([{ id: 'notes', agentRole: 'document', objective: 'Summarize supplied office notes for cancel-synthesis' },
+      { id: 'actions', agentRole: 'project', objective: 'List actions from supplied notes for cancel-synthesis', dependsOn: ['notes'] }]) : '[]';
   else if (task.includes('cancel-after-tool') && !hasToolResult) toolCalls = [{ id: randomUUID(), type: 'function',
     function: { name: 'read_url', arguments: JSON.stringify({ url: 'http://127.0.0.1:9/blocked-fixture' }) } }];
   stats.completed++;
@@ -187,7 +188,15 @@ try {
     if (task === 'cancel-synthesis') { assert.ok(message.cost > 0); assert.match(message.content, /Local fixture final answer/); }
     if (task === 'cancel-verification') {
       assert.ok(message.cost > 0); assert.match(message.content, /Local fixture final answer/);
-      assert.equal(message.deliveryReview, undefined);
+      assert.equal(message.deliveryReview.status, 'unverified');
+      assert.deepEqual(message.deliveryReview.checks, []);
+      assert.deepEqual(message.deliveryReview.coverage, { expectedBlocks: 1, checkedBlocks: 0 });
+      assert.equal(message.deliveryReview.receipt.status, 'request_failed');
+      assert.equal(message.deliveryReview.receipt.unsettledRequests, 1);
+      assert.equal(message.deliveryReview.receipt.rawOutput, undefined);
+      assert.equal(message.deliveryReview.revisionAttempt, undefined);
+      assert.equal(stats.calls - before.calls, 3, 'Plan, draft and interrupted review only');
+      assert.deepEqual(run.events.find(event => event.type === 'complete').data.deliveryReview, message.deliveryReview);
       assert.ok(message.traces.some(event => event.data.stage === 'verify'));
     }
     const calls = stats.calls; await delay(100); assert.equal(stats.calls, calls, 'No model retries or synthesis after cancellation');

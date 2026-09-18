@@ -167,7 +167,8 @@ describe('orchestrator research handoff and completion quality', () => {
   });
   it('does not label truncated orchestrator synthesis successful or discard its paid-for draft', async () => {
     const call = vi.fn<LLMProvider['call']>()
-      .mockResolvedValueOnce(answer('[{"id":"d","agentRole":"document","objective":"Write"}]'))
+      .mockResolvedValueOnce(answer('[{"id":"p","agentRole":"project","objective":"Plan"},{"id":"d","agentRole":"document","objective":"Write","dependsOn":["p"]}]'))
+      .mockResolvedValueOnce(answer('Plan source material'))
       .mockResolvedValueOnce(answer('Subtask source material'))
       .mockResolvedValueOnce({ ...answer('Paid-for final draft'), stopReason: 'max_tokens' });
     const complete = vi.fn();
@@ -176,21 +177,37 @@ describe('orchestrator research handoff and completion quality', () => {
     expect(result.output).toContain('Paid-for final draft');
     expect(result.output).toContain('任务未完整完成');
     expect(complete).toHaveBeenCalledTimes(1);
+    expect(call).toHaveBeenCalledTimes(4);
+  });
+  it('does not promote a truncated sole worker to a successful direct deliverable', async () => {
+    const call = vi.fn<LLMProvider['call']>()
+      .mockResolvedValueOnce(answer('[{"id":"d","agentRole":"document","objective":"Write"}]'))
+      .mockResolvedValueOnce({ ...answer('Incomplete paid-for draft'), stopReason: 'max_tokens' })
+      .mockImplementationOnce(async params => {
+        expect(params.messages[0].content).toContain('你是办公交付助手');
+        expect(params.messages[1].content).toContain('[部分结果]');
+        expect(params.messages[1].content).toContain('Incomplete paid-for draft');
+        return answer('Partial result remains incomplete');
+      });
+    const result = await runOrchestrator({ model: 'fixture', provider: { name: 'fixture', call, stream: async function* () {} } }, '整理已提供材料');
+    expect(result.success).toBe(false);
+    expect(result.deliveryReview).toBeUndefined();
+    expect(result.subResults[0].summary).toContain('Incomplete paid-for draft');
     expect(call).toHaveBeenCalledTimes(3);
   });
-  it('hands completed research to the writer but grounds final synthesis in the original task and source ledger', async () => {
+  it.each([true, false])('grounds research synthesis in the original task and sources, including a sole researcher (writer=%s)', async writer => {
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-11T00:00:00Z'));
     fixture.sources = [source('https://openai.com/index/a'), source('https://anthropic.com/news/b')];
     const call = vi.fn<LLMProvider['call']>();
     call.mockResolvedValueOnce(answer(JSON.stringify([
       { id: 'r', agentRole: 'research', objective: '搜集发布资料', searchQuery: 'AI Agent release' },
-      { id: 'd', agentRole: 'document', objective: '整理报告' },
+      ...(writer ? [{ id: 'd', agentRole: 'document', objective: '整理报告' }] : []),
     ])));
     call.mockImplementationOnce(async params => {
       expect(params.messages.at(-1)?.content).toContain('近30天 AI Agent 最新进展');
       return answer('Evidence '.repeat(400) + '\nCitation: https://openai.com/index/a');
     });
-    call.mockImplementationOnce(async params => {
+    if (writer) call.mockImplementationOnce(async params => {
       expect(params.messages.at(-1)?.content).toContain('Citation: https://openai.com/index/a');
       expect(params.messages.at(-1)?.content).toContain('publication_metadata');
       return answer('Document output');
@@ -209,7 +226,7 @@ describe('orchestrator research handoff and completion quality', () => {
     call.mockResolvedValueOnce(answer(JSON.stringify({ taskSatisfied: true, missingRequirements: [], claims: [{ id: 'f1', verdict: 'supported', kind: 'finding', reason: 'Fixture support' }] })));
     const complete = vi.fn();
     const result = await runOrchestrator({ model: 'deepseek-chat', searchSessionId: 'opaque-search-session', provider: { name: 'fixture', call, stream: async function* () {} } }, '近30天 AI Agent 最新进展', { onComplete: complete });
-    expect(call).toHaveBeenCalledTimes(5);
+    expect(call).toHaveBeenCalledTimes(writer ? 5 : 4);
     expect(result.success).toBe(true);
     expect(result.research?.review?.passed).toBe(true);
     expect(fixture.queries).toHaveLength(1);

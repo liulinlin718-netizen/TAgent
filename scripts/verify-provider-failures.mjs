@@ -22,7 +22,7 @@ const scenarios = [
   { name: 'malformed-json', code: 'invalid_response' },
   { name: 'stalled-body', code: 'timeout' },
   { name: 'connection-reset', code: 'connection' },
-  { name: 'synthesis-failure', status: 503, code: 'upstream', after: 2 },
+  { name: 'synthesis-failure', status: 503, code: 'upstream', after: 3 },
 ];
 let current, providerName, calls = 0, totalCalls = 0, child, logs = '', fixtureError;
 const results = [];
@@ -39,7 +39,8 @@ const modelServer = createServer(async (request, response) => {
     calls++; totalCalls++;
     if (calls <= (current.after || 0)) {
       const content = calls === 1
-        ? JSON.stringify([{ id: 't1', agentRole: 'document', objective: 'Summarize only the supplied meeting notes. Do not browse.' }])
+        ? JSON.stringify([{ id: 't1', agentRole: 'document', objective: 'Summarize only the supplied meeting notes. Do not browse.' },
+          { id: 't2', agentRole: 'project', objective: 'List actions from the supplied meeting notes. Do not browse.', dependsOn: ['t1'] }])
         : artifact;
       const value = providerName === 'anthropic'
         ? { id: 'fixture', type: 'message', role: 'assistant', model: input.model,
@@ -166,7 +167,7 @@ try {
         if (scenario.after) {
           assert.ok(final.output.includes(artifact), 'Failed synthesis must preserve completed work');
           assert.ok(final.output.includes(`[${scenario.code}`), 'The final report must explain why synthesis failed');
-          assert.deepEqual(final.totalTokens, { input: 200, output: 60 });
+          assert.deepEqual(final.totalTokens, { input: 300, output: 90 });
           assert.ok(final.totalCost > 0, 'Previously received usage must not be reset on a later error');
         } else {
           assert.ok(final.output.includes(`[${scenario.code}`), 'Early failures must show the actionable cause');

@@ -65,7 +65,8 @@ const modelServer = createServer(async (request, response) => {
   }
   else if (officeRevision) content = 'REVISED_OFFICE_DRAFT：已返回的修订正文，等待重新核对。';
   else if (planning) content = task.includes('crash-synthesis')
-    ? JSON.stringify([{ id: 'notes', agentRole: 'document', objective: 'Summarize supplied office notes for crash-synthesis' }]) : '[]';
+    ? JSON.stringify([{ id: 'notes', agentRole: 'document', objective: 'Summarize supplied office notes for crash-synthesis' },
+      { id: 'actions', agentRole: 'project', objective: 'List actions from supplied notes for crash-synthesis', dependsOn: ['notes'] }]) : '[]';
   else if (task.includes('crash-tool') && !hasToolResult) toolCalls = [{ id: randomUUID(), type: 'function',
     function: { name: 'read_url', arguments: JSON.stringify({ url: 'http://127.0.0.1:9/blocked-fixture' }) } }];
   else if (officePhase) content = 'ORIGINAL_OFFICE_DRAFT：已返回的办公正文。';
