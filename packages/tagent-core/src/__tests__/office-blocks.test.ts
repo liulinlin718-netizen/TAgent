@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CostTracker, type LLMProvider, type LLMResponse } from '@tagent/ai';
-import { officeOutputBlocks, type OfficeBlockSchema } from '../office-blocks.js';
+import { officeOutputBlocks, officeTableRows, type OfficeBlockSchema } from '../office-blocks.js';
 import { officeReviewTemplate, parseOfficeReview, verifyOfficeDelivery } from '../office-delivery.js';
 
 const schema = 'table-rows-v1';
@@ -15,6 +15,18 @@ function verdict(body: string, blockSchema: OfficeBlockSchema = schema) {
 }
 
 describe('versioned office review blocks', () => {
+  it('reads named cells independently of numbering, outer pipes, emphasis and escaped pipes', () => {
+    const body = '**材料依据** | # | 风险名称\n--- | --- | ---\n未说明缓冲 | 1 | 缓冲未纳入\\|排期';
+    expect(officeTableRows(body)).toEqual([{ text: '未说明缓冲 | 1 | 缓冲未纳入\\|排期', cells: [
+      { header: '材料依据', text: '未说明缓冲' }, { header: '#', text: '1' }, { header: '风险名称', text: '缓冲未纳入|排期' },
+    ] }]);
+  });
+  it('does not guess cells for malformed rows, quoted tables or code examples', () => {
+    const body = '| 风险 | 材料依据 |\n| --- | --- |\n| 缓冲未纳入 | 未说明 | 多余列 |';
+    expect(officeTableRows(body)).toEqual([]);
+    expect(officeTableRows('```md\n' + table + '\n```')).toEqual([]);
+    expect(officeTableRows(table.split('\n').map(line => '> ' + line).join('\n'))).toEqual([]);
+  });
   it('keeps legacy paragraph numbering as the default for historical receipts', () => {
     const legacy = officeOutputBlocks(output);
     expect(legacy).toEqual(output.trim().split(/\n\s*\n/).map((text, index) => ({ index, text })));

@@ -1,5 +1,5 @@
 import type { OfficeCheck } from './office-delivery.js';
-import { officeOutputBlocks } from './office-blocks.js';
+import { officeTableRows } from './office-blocks.js';
 
 const quantity = String.raw`(?<![\d.+\-\u2212])(\d{1,9}(?:,\d{3})*(?:\.\d+)?)[ \t]*([家名位条项笔份台件所批组户个])`;
 const serial = /无并行条件|不允许并行|不得并行|禁止并行|严格串行|必须串行|仅允许串行/;
@@ -51,10 +51,32 @@ function explicitSubsets(input: string[]): Subset[] {
 export function inspectOfficeGrounding(task: string, output: string): OfficeCheck[] {
   const input = sentences(task), statements = sentences(output);
   const checks: OfficeCheck[] = [];
-  const add = (kind: string, label: string, quote: string, statement: string, reason: string) => {
-    checks.push({ id: `grounding-${kind}-${checks.length}`, method: 'programmatic', status: 'failed', label, reason,
+  const add = (kind: string, label: string, quote: string, statement: string, reason: string, status: OfficeCheck['status'] = 'failed') => {
+    checks.push({ id: `grounding-${kind}-${checks.length}`, method: 'programmatic', status, label, reason,
       outputQuote: statement, evidence: [{ materialId: 'input', label: '用户提供的任务与材料', quote }] });
   };
+
+  // A missing appointment alone does not establish that role's project-wide authority.
+  const quoted = /"[^"\n]*"|'[^'\n]*'|“[^”\n]*”|‘[^’\n]*’|`[^`\n]*`/g;
+  const pendingRoles = input.flatMap(sentence => {
+    if (alternative.test(sentence) || /并非|不是|不再|是否|[?？]/.test(sentence)) return [];
+    return [...sentence.replace(quoted, match => ' '.repeat(match.length)).matchAll(/([\p{Script=Han}A-Za-z]{1,16}(?:负责人|主管|经理))\s*(?:待定|未确定)/gu)]
+      .map(match => ({ role: match[1], quote: match[0] }));
+  });
+  for (const pending of pendingRoles) {
+    const declaredResponsibilities = new RegExp(`${pending.role}[^。；;\\n]{0,8}(?:负责|统筹|管理|承担|分配)`);
+    if (input.some(sentence => declaredResponsibilities.test(sentence))) continue;
+    for (const statement of statements) {
+      const prose = statement.replace(quoted, '');
+      if (!prose.includes(pending.role) || alternative.test(prose) || correction.test(prose) || /建议/.test(prose)) continue;
+      const claim = /(?:由此|因此|所以|因而|导致)[^。；;|\n]{0,64}(?:责任归属|任务派发|整体排期|所有阶段|各阶段|全部任务|整个项目)/.exec(prose);
+      if (!claim || /(?:无法|不能|不可)(?:据此)?(?:确认|推断|判断|断定|证明)(?:其|该岗位)?(?:负责|承担|统筹)/.test(claim[0])) continue;
+      if (/(?:不代表|不意味着|不等于)\s*$/.test(prose.slice(0, claim.index))
+        || /^(?:由此|因此|所以|因而|导致)\s*(?:这)?(?:并)?(?:不代表|不意味着|不等于)/.test(claim[0])) continue;
+      add('role-scope', '岗位待定后的职责推论待核对', pending.quote, statement,
+        '材料明确的是该岗位人选待定，尚未给出它与所述任务或整体职责的对应关系。此处只标记证据不足，不断言实际分工错误；补充原文中的职责依据，或将推论改为范围准确的未知项。', 'unverified');
+    }
+  }
 
   const serialInput = input.find(sentence => serial.test(sentence.replace(/"[^"\n]*"|'[^'\n]*'|“[^”\n]*”|‘[^’\n]*’|`[^`\n]*`/g, ''))
     && !alternative.test(sentence) && !uncertainSource.test(sentence));
@@ -129,20 +151,19 @@ export function inspectOfficeGrounding(task: string, output: string): OfficeChec
     }
   }
 
-  // These checks only cover explicit risk/evidence columns, not arbitrary tables or business semantics.
-  for (const block of officeOutputBlocks(output, 'table-rows-v1')) {
-    if (!block.context?.tableHeader || !/^\|\s*风险\s*\|\s*材料依据\s*\|/.test(block.context.tableHeader)
-      || block.text.includes('\\|')) continue;
-    const cells = /^\|\s*([^|]+)\|\s*([^|]+)\|/.exec(block.text);
-    if (!cells) continue;
-    const label = cells[1].replace(/\*\*/g, '').trim(), basis = cells[2].trim();
+  // Match unique semantic column names; numbering and column order must not disable checks.
+  for (const row of officeTableRows(output)) {
+    const risks = row.cells.filter(cell => /^(?:风险|风险名称)$/.test(cell.header));
+    const evidence = row.cells.filter(cell => /^(?:材料依据|依据)$/.test(cell.header));
+    if (risks.length !== 1 || evidence.length !== 1) continue;
+    const label = risks[0].text.trim(), basis = evidence[0].text.trim();
     if (correction.test(label) || /是否|可能|若|假设|不等于|不代表/.test(label)) continue;
     const missingResponsibility = /(?:负责人|责任人)[^，,；;|]{0,10}(?:待定|未提供|未说明|未确定)/.test(basis);
     const assertedVacancy = /(?:责任归属|任务责任|人员配置)(?:无法落实|未落实|空缺|缺失)|(?:项目|任务)无人负责/.test(label);
     const missingAllowance = /未(?:提供|说明|提及)|仅给出/.test(basis);
     const assertedExclusion = /(?:返工|缓冲)(?:时间|工期|安排)?(?:未纳入|未计入|未含|不含|未预留)|(?:工期|排期)(?:未含|不含)(?:返工|缓冲)/.test(label);
     if (missingResponsibility && assertedVacancy || missingAllowance && assertedExclusion) {
-      add('risk-label', '风险名称把未知写成已确认缺陷', task, block.text,
+      add('risk-label', '风险名称把未知写成已确认缺陷', task, row.text,
         '本行材料依据只说明信息未提供、岗位待定或仅给了工期，不能据此确认责任无法落实、现实无人负责或返工/缓冲被排除。风险名称、影响和建议均应保留未知范围；条件性风险不证明其触发条件已经成立。');
     }
   }

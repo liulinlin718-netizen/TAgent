@@ -19,6 +19,39 @@ const response = (content: string): LLMResponse => ({ model: 'deepseek-chat', co
 
 describe('evidence-bound office contradiction checks', () => {
   it.each([
+    '研发负责人待定仅指该岗位人选未定，由此无法确认研发环节的责任归属与任务派发对象。',
+    '研发负责人待定仅指该岗位人选未定，由此无法确认研发环节的责任归属与任务派发对象；这不等于各任务现实中无人承担，也不影响排期计算。',
+    '采购主管待定，因此整个项目无法开展。',
+  ])('does not let model approval certify an unsupported role-to-project implication: %s', output => {
+    const task = output.startsWith('采购') ? '采购主管待定；其余材料没有提供。' : projectTask;
+    const result = parseOfficeReview(positiveReview(task, output), task, output, [{ id: 'input', label: '材料', text: task }], 'fixture');
+    expect(result.status).toBe('needs_revision');
+    expect(result.checks).toContainEqual(expect.objectContaining({ id: expect.stringContaining('grounding-role-scope'),
+      status: 'unverified', outputQuote: output.replace(/。$/, ''), reason: expect.stringContaining('不断言实际分工错误') }));
+  });
+  it.each([
+    '研发负责人待定；其他任务责任材料未提供。',
+    '研发负责人待定，因此该岗位人选尚不能确定。',
+    '研发负责人待定，不代表整个项目无人负责。',
+    '研发负责人待定，因此并不意味着整个项目无人负责。',
+    '研发负责人待定，因此不能推断其负责整个项目。',
+    '若研发负责人负责所有阶段，因此所有阶段可能受影响。',
+    '建议确认研发负责人是否负责整个项目。',
+    '> 研发负责人待定，因此整个项目无法开展。',
+    '```text\n研发负责人待定，因此整个项目无法开展。\n```',
+  ])('preserves scoped facts, explicit uncertainty, proposals and quotations: %s', output => {
+    expect(inspectOfficeGrounding(projectTask, output)).toEqual([]);
+  });
+  it.each([
+    '研发负责人待定。研发负责人负责整体排期和各项任务派发。',
+    '研发负责人待定？',
+    '如果研发负责人待定，请讨论方案。',
+    '原文为“研发负责人待定”，请翻译。',
+    '人员安排没有提供。',
+  ])('does not invent a missing scope from supplied responsibilities or hypothetical input: %s', task => {
+    expect(inspectOfficeGrounding(task, '研发负责人待定，因此整体排期尚不能落实。')).toEqual([]);
+  });
+  it.each([
     'A无时点，B有时点（2026-08-31），两份数字不在同一时点上，无法直接做同期比较。',
     '来源A未说明统计日期，因此两份材料的时点不同。',
     '来源A日期未知，两组数据时间不一致。',
@@ -70,7 +103,6 @@ describe('evidence-bound office contradiction checks', () => {
     '| 返工时间未纳入排期 | 材料明示不含返工 | 出现返工 |',
     '| 不应推断责任归属无法落实 | 研发负责人待定 | 需区分范围 |',
     '| 是否存在责任归属无法落实 | 责任人未提供 | 待核实 |',
-    '| 责任归属无法落实\\|旧标题 | 责任人未提供 | 含转义列，交给模型核对 |',
   ])('preserves scoped unknowns, explicit defects and unsupported table syntax: %s', row => {
     expect(inspectOfficeGrounding(projectTask, '| 风险 | 材料依据 | 触发条件 |\n| --- | --- | --- |\n' + row)).toEqual([]);
   });
@@ -79,6 +111,28 @@ describe('evidence-bound office contradiction checks', () => {
     for (const output of ['```md\n' + table + '\n```', table.split('\n').map(line => '> ' + line).join('\n'), table.replace('风险 | 材料依据', '旧标题 | 批注意见')]) {
       expect(inspectOfficeGrounding(projectTask, output)).toEqual([]);
     }
+  });
+  it.each([
+    '| # | 风险 | 材料依据 |\n| --- | --- | --- |\n| 1 | 责任归属无法落实 | 研发负责人待定 |',
+    '| 材料依据 | 应对建议 | 风险 |\n| --- | --- | --- |\n| 未说明缓冲 | 建议补充说明 | 缓冲未纳入排期 |',
+    '**风险名称** | **依据**\n--- | ---\n返工时间未纳入排期 | 仅给出测试工期',
+    '| 风险 | 材料依据 | 备注 |\n| --- | --- | --- |\n| 责任归属无法落实\\|当前标题 | 责任人未提供 | 应保留此原句 |',
+  ])('keeps risk checks active for numbered, reordered and formatted tables: %s', output => {
+    const result = parseOfficeReview(positiveReview(projectTask, output), projectTask, output,
+      [{ id: 'input', label: '材料', text: projectTask }], 'fixture');
+    expect(result.status).toBe('needs_revision');
+    const check = result.checks.find(check => check.id.startsWith('grounding-risk-label'));
+    expect(check).toMatchObject({ status: 'failed', evidence: [{ materialId: 'input', quote: projectTask }] });
+    expect(output).toContain(check!.outputQuote);
+  });
+  it.each([
+    '| # | 风险 | 材料依据 |\n| --- | --- | --- |\n| 1 | 缓冲安排未说明 | 未说明缓冲 |',
+    '| 风险 | 材料依据 |\n| --- | --- |\n| 缓冲未纳入排期 | 明确不含缓冲 |',
+    '| 风险 | 风险 | 材料依据 |\n| --- | --- | --- |\n| 旧标题 | 缓冲未纳入排期 | 未说明缓冲 |',
+    '| 备注 | 材料依据 |\n| --- | --- |\n| 缓冲未纳入排期 | 未说明缓冲 |',
+    '| 风险 | 材料依据 | 材料依据 |\n| --- | --- | --- |\n| 缓冲未纳入排期 | 未说明缓冲 | 明确不含缓冲 |',
+  ])('does not infer defects or guess duplicate/unrelated column meanings: %s', output => {
+    expect(inspectOfficeGrounding(projectTask, output)).toEqual([]);
   });
   it('rejects executable parallelization advice for an explicitly serial project', () => {
     const result = inspectOfficeGrounding(projectTask, '建议设计与开发并行推进以缩短排期。');
@@ -297,6 +351,24 @@ describe('bounded repair of known contradictions', () => {
   const fixed = '按给定依赖严格串行，总工期11个工作日。研发负责人待定。建议各阶段产出经确认后交接。';
   const options = (call: LLMProvider['call']) => ({ provider: { name: 'fixture', call, stream: async function* () {} },
     task: projectTask, output: projectBad, materials, model: 'deepseek-chat', maxCost: 1, costTracker: new CostTracker(), qualityChecks: [] });
+
+  it('routes an unverified scope implication through one bounded revision without declaring it false', async () => {
+    const task = '采购主管待定；各任务分工材料未提供。';
+    const draft = '采购主管待定，因此整个项目无法开展。';
+    const corrected = '采购主管人选待定；各任务分工材料未提供，建议分别确认。';
+    const call = vi.fn<LLMProvider['call']>().mockResolvedValueOnce(response(positiveReview(task, draft)))
+      .mockResolvedValueOnce(response(corrected)).mockResolvedValueOnce(response(positiveReview(task, corrected)));
+    const result = await verifyOfficeDelivery({ ...options(call), task, output: draft,
+      materials: [{ id: 'input', label: '材料', text: task }] });
+    expect(call).toHaveBeenCalledTimes(3);
+    expect(result.output).toBe(corrected);
+    expect(result.review.status).toBe('passed');
+    expect(result.review.previous?.output).toBe(draft);
+    expect(result.review.previous?.review.checks).toContainEqual(expect.objectContaining({ status: 'unverified', method: 'programmatic' }));
+    expect(JSON.parse(call.mock.calls[1][0].messages[1].content).feedback).toContainEqual(expect.objectContaining({
+      label: '岗位待定后的职责推论待核对', evidence: [{ materialId: 'input', label: '用户提供的任务与材料', quote: '采购主管待定' }],
+    }));
+  });
 
   it('feeds the precise conflict and source into the existing one-revision flow, retaining the original', async () => {
     const call = vi.fn<LLMProvider['call']>().mockResolvedValueOnce(response(positiveReview(projectTask, projectBad)))

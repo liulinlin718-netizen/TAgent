@@ -11,12 +11,38 @@ export interface OfficeOutputBlock {
 }
 
 const paragraphs = (text: string) => text.trim().split(/\n\s*\n/).filter(block => block.trim());
+const parseMarkdown = (text: string) => fromMarkdown(text, { extensions: [gfmTable()], mdastExtensions: [gfmTableFromMarkdown()] });
+
+export interface OfficeTableRow {
+  text: string;
+  cells: { header: string; text: string }[];
+}
+
+/** Top-level GFM rows only; column identity comes from the parsed header, not pipe offsets. */
+export function officeTableRows(output: string): OfficeTableRow[] {
+  type Node = { type: string; value?: string; children?: Node[] };
+  const plainText = (node: Node): string => node.type === 'text' || node.type === 'inlineCode'
+    ? node.value ?? '' : (node.children ?? []).map(plainText).join('');
+  const rows: OfficeTableRow[] = [];
+  for (const table of parseMarkdown(output).children) {
+    if (table.type !== 'table') continue;
+    const headers = table.children[0]?.children.map(cell => plainText(cell).trim()) ?? [];
+    for (const row of table.children.slice(1)) {
+      const start = row.position?.start.offset, end = row.position?.end.offset;
+      if (start === undefined || end === undefined) throw new Error('表格行缺少原文位置，未省略该行。');
+      // Ragged rows are left to the model review; do not assign text to guessed columns.
+      if (row.children.length !== headers.length) continue;
+      rows.push({ text: output.slice(start, end), cells: row.children.map((cell, index) => ({ header: headers[index], text: plainText(cell) })) });
+    }
+  }
+  return rows;
+}
 
 export function officeOutputBlocks(output: string, schema: OfficeBlockSchema = 'paragraph-v1'): OfficeOutputBlock[] {
   if (schema === 'paragraph-v1') return paragraphs(output).map((text, index) => ({ index, text }));
   if (schema !== 'table-rows-v1') throw new Error('未知办公核对分段版本，不能重新解释历史编号。');
 
-  const tree = fromMarkdown(output, { extensions: [gfmTable()], mdastExtensions: [gfmTableFromMarkdown()] });
+  const tree = parseMarkdown(output);
   const blocks: Omit<OfficeOutputBlock, 'index'>[] = [];
   let cursor = 0, tableNumber = 0, section = '';
   for (const node of tree.children) {
