@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { LLMProvider, LLMResponse, LLMStreamEvent, TokenUsage } from '../packages/tagent-ai/src/types.js';
-import { acceptanceOptions, createAcceptanceProvider, reserveAcceptanceCost } from './model-acceptance.js';
+import { acceptanceOptions, createAcceptanceProvider, officeCaseAdmission, reserveAcceptanceCost } from './model-acceptance.js';
 
 const params = { model: 'fixture', messages: [] };
 const usage = (cost = 0.01): TokenUsage => ({ inputTokens: 10, outputTokens: 5, cost });
@@ -15,6 +15,16 @@ function fixture(): LLMProvider {
 async function collect(provider: LLMProvider) { const events = []; for await (const event of provider.stream(params)) events.push(event); return events; }
 
 describe('manual acceptance consent and limits', () => {
+  it('does not start a new office case with only enough calls for a partial draft', async () => {
+    const upstream = fixture(), wrapped = createAcceptanceProvider(upstream, { maxCalls: 8, maxRecordedCost: .08 });
+    for (let index = 0; index < 6; index++) await wrapped.provider.call(params);
+    const before = wrapped.snapshot();
+    expect(officeCaseAdmission(before)).toEqual({ allowed: false, reason: 'insufficient_calls', remainingCalls: 2, minimumCalls: 4 });
+    expect(wrapped.snapshot()).toEqual(before);
+    expect(upstream.call).toHaveBeenCalledTimes(6);
+    expect(officeCaseAdmission({ ...before, calls: 4 })).toEqual({ allowed: true, remainingCalls: 4, minimumCalls: 4 });
+    expect(officeCaseAdmission({ ...before, calls: 3, unsettledRequests: 1 })).toMatchObject({ allowed: false, reason: 'unsettled_usage' });
+  });
   it('requires explicit limits, keeps them separate from selected roles/files, and snapshots policy', () => {
     const options = acceptanceOptions(['research', '--live', '--max-calls', '8', '--max-recorded-cost', '0.20']);
     expect(options).toEqual({ maxCalls: 8, maxRecordedCost: 0.2, positional: ['research'] });

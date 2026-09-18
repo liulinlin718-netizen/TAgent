@@ -19,6 +19,41 @@ const response = (content: string): LLMResponse => ({ model: 'deepseek-chat', co
 
 describe('evidence-bound office contradiction checks', () => {
   it.each([
+    'A无时点，B有时点（2026-08-31），两份数字不在同一时点上，无法直接做同期比较。',
+    '来源A未说明统计日期，因此两份材料的时点不同。',
+    '来源A日期未知，两组数据时间不一致。',
+  ])('does not let missing dates establish distinct dates: %s', statement => {
+    const checks = inspectOfficeGrounding(researchTask, statement);
+    expect(checks).toEqual([expect.objectContaining({ id: expect.stringContaining('grounding-date-uncertainty'),
+      status: 'failed', evidence: [expect.objectContaining({ quote: expect.stringContaining('未说明统计日期') })] })]);
+    const review = parseOfficeReview(positiveReview(researchTask, statement), researchTask, statement,
+      [{ id: 'input', label: '材料', text: researchTask }], 'fixture');
+    expect(review.status).toBe('needs_revision');
+  });
+  it.each([
+    '来源A未说明统计日期，无法确认两份数字是否在同一时点上。',
+    '来源A日期未知，两份材料的时点可能不同。',
+    '来源A日期未知，不能确认两份材料的时点不同。',
+    '来源A日期未知，不足以证明两份数字不在同一时点上。',
+    '来源A日期未知，不代表两份材料的时点不同。',
+    '来源A日期未知，可能两份材料的时点不同。',
+    '来源A日期未知，原句为“两份材料的时点不同”。',
+    '来源A日期未知，不应据此声称两份材料的时点不同。',
+    '如果两份材料的时点不同，需要另行说明；目前来源A日期未知。',
+    '来源A日期未知，另有证据已确认两份材料的时点不同。',
+    '> 来源A日期未知，两份材料的时点不同。',
+    '```text\n来源A日期未知，两份材料的时点不同。\n```',
+  ])('preserves uncertainty, independent evidence, alternatives and quoted date comparisons: %s', statement => {
+    expect(inspectOfficeGrounding(researchTask, statement)).toEqual([]);
+  });
+  it('does not override an explicitly supplied date relationship or invent a missing date', () => {
+    const statement = '来源A未说明统计日期，两份材料的时点不同。';
+    expect(inspectOfficeGrounding(researchTask + '另有材料明确说明两份材料的时点不同。', statement)).toEqual([]);
+    expect(inspectOfficeGrounding('来源A日期为2026-08-01；来源B日期为2026-09-01。', statement)).toEqual([]);
+    const task = '来源甲记录72项，但未注明日期。来源乙记录60项，日期为2026-09-01。';
+    expect(inspectOfficeGrounding(task, '来源甲未注明日期，两份数据不在同一时点。')).toHaveLength(1);
+  });
+  it.each([
     '| 责任归属无法落实 | 研发负责人待定；各项任务责任人未提供 | 进入实际指派阶段仍无法确定负责人 |',
     '| 返工时间未纳入排期 | 材料仅给出测试工期2日 | 测试后出现需返工的问题 |',
     '| 工期未含缓冲风险 | 材料未提及缓冲 | 出现返工 |',

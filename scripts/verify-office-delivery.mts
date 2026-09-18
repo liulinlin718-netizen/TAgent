@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { LLMProvider } from '../packages/tagent-ai/src/index.js';
 import type { OrchestratorEventHandler } from '../packages/tagent-core/src/orchestrator.js';
 import { checkOfficeTable, officeTable } from './office-acceptance.js';
-import { acceptanceOptions, createAcceptanceProvider, reserveAcceptanceCost } from './model-acceptance.js';
+import { acceptanceOptions, createAcceptanceProvider, officeCaseAdmission, reserveAcceptanceCost } from './model-acceptance.js';
 
 // Manual model acceptance, never included in CI or automatic Benchmark runs.
 const limits = acceptanceOptions(process.argv.slice(2));
@@ -45,6 +45,14 @@ console.log(JSON.stringify({ directory, provider: config.name, model: config.mod
 try {
   for (const test of cases.filter(test => selected.includes(test.role))) {
     const started = Date.now(), before = acceptance.snapshot();
+    const admission = officeCaseAdmission(before);
+    if (!admission.allowed) {
+      const record = { role: test.role, skipped: 'not_dispatched', admission, calls: 0, cost: 0, acceptance: before,
+        contentReview: 'Not run; the remaining authorization cannot support the minimum complete office flow.' };
+      await writeFile(resolve(directory, `${test.role}.json`), JSON.stringify(record, null, 2), 'utf8');
+      console.log(JSON.stringify(record)); process.exitCode = 1;
+      continue;
+    }
     const pool = new AgentPool();
     for (const agent of pool.getAllAgents()) {
       agent.constraints.allowedTools = test.role === 'data' && agent.id === 'data-agent'

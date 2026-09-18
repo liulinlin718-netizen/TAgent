@@ -2,6 +2,15 @@ import { MODEL_PRICING, type LLMCallParams, type LLMProvider, type TokenUsage } 
 
 export interface AcceptanceLimits { maxCalls: number; maxRecordedCost: number }
 
+export function officeCaseAdmission(snapshot: AcceptanceLimits & { calls: number; unsettledRequests: number }) {
+  // Planning, one worker, synthesis and review; extra workers/revisions can still require more.
+  const minimumCalls = 4;
+  const remainingCalls = snapshot.maxCalls - snapshot.calls;
+  if (snapshot.unsettledRequests > 0) return { allowed: false, reason: 'unsettled_usage', remainingCalls, minimumCalls };
+  if (remainingCalls < minimumCalls) return { allowed: false, reason: 'insufficient_calls', remainingCalls, minimumCalls };
+  return { allowed: true, remainingCalls, minimumCalls };
+}
+
 function validateLimits(limits: AcceptanceLimits) {
   if (!Number.isSafeInteger(limits.maxCalls) || limits.maxCalls < 1 || limits.maxCalls > 24
     || !Number.isFinite(limits.maxRecordedCost) || limits.maxRecordedCost <= 0 || limits.maxRecordedCost > 0.65) {

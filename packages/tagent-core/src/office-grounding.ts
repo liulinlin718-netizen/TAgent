@@ -7,6 +7,8 @@ const alternative = /(?:如果|假如|假设|若|未来|将来|下次|下一轮|
 const serialAlternative = /(?:下次|下一轮|后续变更|另一个|另一份|新一轮|示例|举例|旧计划|旧版|过去|原来|翻译|反例|(?:确认|批准|同意|许可|授权)后)/;
 const correction = /不要|不应|不必|无需|无须|不得|错误|误读|不准确|不成立|已明确|已经明确/;
 const uncertainSource = /是否|能否|可能|预计|大约|约有|尚未|未确认|不确定|未知|并非|不是|取消|不再|\?|？/;
+const missingDate = /(?:未说明|未注明|未提供|没有|缺少|无)(?:统计|截止)?(?:日期|时间|时点)|(?:日期|时间|时点)(?:未知|缺失|未提供)/;
+const dateDifference = /(?:两份|两组|双方|二者|两者|两项)(?:材料|数据|数字|来源|统计)?(?:的)?(?:统计|对应)?(?:时点|日期|时间)(?:不同|不一致)|(?:两份|两组|二者|两者)(?:材料|数据|数字|来源)?(?:不在|不是)(?:同一|相同)(?:统计)?(?:时点|日期|时间)/;
 
 function sentences(value: string): string[] {
   // Only plain prose is checked. Quoted examples/code are not new user requirements.
@@ -87,8 +89,23 @@ export function inspectOfficeGrounding(task: string, output: string): OfficeChec
     }
   }
 
-  const missingDateInput = input.find(sentence => /(?:未说明|未注明|未提供|没有|缺少|无)(?:统计|截止)?(?:日期|时间|时点)|(?:日期|时间|时点)(?:未知|缺失|未提供)/.test(sentence)
+  const missingDateInput = input.find(sentence => missingDate.test(sentence)
     && !alternative.test(sentence));
+  const knownDateDifference = input.some(sentence => dateDifference.test(sentence)
+    && !alternative.test(sentence) && !uncertainSource.test(sentence) && !correction.test(sentence));
+  if (missingDateInput && !knownDateDifference) {
+    // Only reject an explicit inference in the same sentence, not any use of different dates.
+    for (const statement of statements) {
+      if (alternative.test(statement) || correction.test(statement) || /另有证据|已证实|已确认|已知|明确说明/.test(statement)) continue;
+      const prose = statement.replace(/"[^"\n]*"|'[^'\n]*'|“[^”\n]*”|‘[^’\n]*’|`[^`\n]*`/g, '');
+      const difference = dateDifference.exec(prose);
+      if (!difference) continue;
+      const premise = prose.slice(0, difference.index);
+      if (!missingDate.test(premise) || /(?:(?:不能|无法|未能|尚未|不宜|不足以)(?:确认|确定|判断|证明|认定|断言|推断|说|得出)|不代表|不意味着|不是说|是否|可能)[：:\s]*$/.test(premise)) continue;
+      add('date-uncertainty', '日期未知被断定为时点不同', missingDateInput, statement,
+        '材料未说明某份来源的日期，只能确认其时点未知，不能由此确定两份来源不在同一时点。应保留“是否同一时点尚无法确认”，同时允许带来源归因的数值比较与算术；不改变原文已经给出的日期。');
+    }
+  }
   const quantities = new Map<string, number>();
   const hasComparableNumbers = missingDateInput && input.some(sentence => {
     for (const match of sentence.matchAll(new RegExp(quantity, 'g'))) {
