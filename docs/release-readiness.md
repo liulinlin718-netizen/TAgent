@@ -2,6 +2,14 @@
 
 更新时间：2026-09-19。本清单落实 implementation_plan.md 的产品目标，不替代原路线图。项目尚未达到公开上线标准；文件存在、类型检查通过或 mock 成功，都不单独证明功能可用。
 
+## 本机试用版收尾（2026-09-19）
+
+- 用户明确选择本轮收尾，保留当前版本、确认代码完整可运行并更新GitHub。交付范围是需人工复核的本机试用版，不是所有未来路线图或专业报告准确性的认证；下方失败及费用记录保留。
+- 应用提交 `cc9ab279ad13932bade535a204f3a7d219b32a00` 的 [GitHub Actions 35388634291](https://github.com/liulinlin718-netizen/TAgent/actions/runs/35388634291) 已完成且成功。Windows、Ubuntu均执行Node 24、锁定依赖安装及 `pnpm check`，包含类型/lint/构建和隔离接口；本次收尾仅更新文档，不改已验证应用代码或重复运行付费模型。
+- G盘本机首页HTTP200、后端health为ok，Web构建ID与启动回执一致，Core/Server构建产物存在；用户会话、Skills及后端环境文件SHA-256未变。日常生成和核对仍为Flash，没有自动启用Pro；无需重启正在运行的服务。
+- 三个独立工具已分别交付：[Agent Trace Kit](https://github.com/liulinlin718-netizen/agent-trace-kit)、[Approval-First Import](https://github.com/liulinlin718-netizen/approval-first-import)、[Evidence-Bound Review](https://github.com/liulinlin718-netizen/evidence-bound-review)。它们可独立使用，不依赖主应用运行，不扩展成额外完整产品。
+- 研究/项目报告仍须人工复核；较强核对模型曾超时，不将其记为验收成功。本轮已知费用$0.11293266，未知预留$0.16078128，旧历史未知账目另列；停止继续消耗。收尾不表示账单已结清，也不改写既有失败回执。
+
 ## 独立核对配置与收尾（2026-09-19）
 
 - 已实现可选独立办公核对模型。显式配置同一服务商、有已知价格的模型，作用范围限于核对和原有最多一次修订；生成、工具、强制联网调研及Benchmark模型不变。默认沿用Flash，不静默增加日常费用。任务开始捕获配置，共用任务总预算；余量不足或超时保留原稿，不自动换模型或重试。实际模型/思考模式进入回执和中断恢复，管理页只读显示。部署方式见[办公核对](./office-delivery.md#可选独立核对模型2026-09-19)。
