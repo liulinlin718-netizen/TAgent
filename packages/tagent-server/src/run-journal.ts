@@ -172,6 +172,7 @@ function validOfficeProgress(value: unknown): value is OfficeDeliveryResult {
   const progress = value as OfficeDeliveryResult, review = progress.review;
   if (typeof progress.output !== 'string' || !review || review.version !== 1
     || !['passed', 'needs_revision', 'unverified'].includes(review.status) || typeof review.model !== 'string'
+    || (review.reasoning !== undefined && !['disabled', 'low'].includes(review.reasoning))
     || typeof review.checkedAt !== 'string' || !Number.isFinite(Date.parse(review.checkedAt))
     || !Number.isInteger(review.materialCount) || review.materialCount < 0
     || !Array.isArray(review.issues) || review.issues.some(issue => typeof issue !== 'string')

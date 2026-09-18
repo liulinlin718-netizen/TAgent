@@ -45,7 +45,7 @@ import { executeTaskPlan, normalizeTaskPlan, type SubTask } from './task-plan.js
 import { assessResearchSources, buildInsufficientResearchReport, formatEvidenceLedger, type ResearchAssessment, type ResearchSource } from './research-evidence.js';
 import { finalAnswerTokenBudget, resolveFinalAnswer, type FinalAnswer } from './final-answer.js';
 import { generateResearchReport, type ResearchReportReview, type ResearchDraft } from './research-report.js';
-import { OFFICE_MATERIAL_BOUNDARY, verifyOfficeDelivery, interruptedOfficeReview, type OfficeDeliveryResult, type OfficeDeliveryReview, type OfficeMaterial } from './office-delivery.js';
+import { OFFICE_MATERIAL_BOUNDARY, verifyOfficeDelivery, interruptedOfficeReview, type OfficeDeliveryResult, type OfficeDeliveryReview, type OfficeMaterial, type OfficeReviewProfile } from './office-delivery.js';
 import { formatConversationTask, selectConversationContext, CONVERSATION_POLICY, type ConversationContext } from './conversation-context.js';
 export type { SubTask } from './task-plan.js';
 
@@ -62,6 +62,8 @@ export interface OrchestratorConfig {
   provider: LLMProvider;
   signal?: AbortSignal;
   model: string;
+  /** Optional same-provider profile for office review and its single revision, never tool execution. */
+  officeReview?: OfficeReviewProfile;
   maxTotalCost?: number;
   /** 外部 AgentPool 单例（服务器级别共享） */
   agentPool?: AgentPool;
@@ -153,6 +155,7 @@ export async function runOrchestrator(
 ): Promise<OrchestratorResult> {
   const { model, signal, maxTotalCost = 1.0, agentPool: externalPool, governanceTemplate = 'standard' } = config;
   const provider = withRunSignal(config.provider, signal);
+  const officeReview: OfficeReviewProfile = { model: config.officeReview?.model ?? model, reasoning: config.officeReview?.reasoning ?? 'disabled' };
   const conversation = config.conversationContext ? structuredClone(config.conversationContext) : undefined;
   if (conversation && ((config.sessionId && conversation.sessionId !== config.sessionId)
     || (config.workspaceId && conversation.workspaceId !== config.workspaceId))) throw new Error('会话上下文归属不一致，未调用模型。');
@@ -182,7 +185,7 @@ export async function runOrchestrator(
   const verifyDelivery = async (result: OrchestratorResult): Promise<OrchestratorResult> => {
     if (shouldForceWebResearch(userMessage) || !result.success || signal?.aborted) return result;
     officeDraft = result.output;
-    const checked = await verifyOfficeDelivery({ provider, model, task: conversation?.items.length ? `${userMessage}\n\n${CONVERSATION_POLICY}` : userMessage, output: result.output,
+    const checked = await verifyOfficeDelivery({ provider, ...officeReview, task: conversation?.items.length ? `${userMessage}\n\n${CONVERSATION_POLICY}` : userMessage, output: result.output,
       materials, qualityChecks: [...qualityChecks], costTracker: globalCostTracker, maxCost: maxTotalCost, signal,
       onProgress: async progress => {
         officeDelivery = structuredClone(progress);

@@ -19,6 +19,7 @@ export const steps = [
   { command: 'node', args: ['scripts/verify-model-connection.mjs'] },
   { command: 'node', args: ['scripts/verify-table-runtime.mjs'] },
   { command: 'node', args: ['scripts/verify-office-runtime.mjs'] },
+  { command: 'node', args: ['scripts/verify-office-runtime.mjs', '--review-profile'] },
   { command: 'node', args: ['scripts/verify-bound-capabilities.mjs'] },
   { command: 'node', args: ['scripts/verify-run-recovery.mjs'] },
 ];

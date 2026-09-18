@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
+import { MODEL_PRICING } from '@tagent/ai';
+import type { OfficeReviewProfile } from '@tagent/core';
 
 type Environment = Record<string, string | undefined>;
 
@@ -72,13 +74,25 @@ export function resolveModelConfig(env: Environment = process.env) {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 300000) {
     throw new Error('TAGENT_LLM_TIMEOUT_MS must be between 1000 and 300000');
   }
-  return { name, apiKey, baseURL, model: env.TAGENT_LLM_MODEL?.trim() || defaultModels[name], timeoutMs };
+  const model = env.TAGENT_LLM_MODEL?.trim() || defaultModels[name];
+  const reviewModel = env.TAGENT_OFFICE_REVIEW_MODEL?.trim() || model;
+  const reasoning = env.TAGENT_OFFICE_REVIEW_REASONING?.trim() || 'disabled';
+  if (env.TAGENT_OFFICE_REVIEW_MODEL?.trim() && (!MODEL_PRICING[reviewModel]
+    || !reviewModel.startsWith({ deepseek: 'deepseek-', anthropic: 'claude-', openai: 'gpt-' }[name]))) {
+    throw new Error('TAGENT_OFFICE_REVIEW_MODEL must be a priced model from the selected provider');
+  }
+  if (!['disabled', 'low'].includes(reasoning) || (reasoning === 'low'
+    && !(name === 'deepseek' && ['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-pro'].includes(reviewModel)))) {
+    throw new Error('TAGENT_OFFICE_REVIEW_REASONING supports disabled, or low with supported DeepSeek models');
+  }
+  const officeReview: OfficeReviewProfile = { model: reviewModel, reasoning: reasoning as OfficeReviewProfile['reasoning'] };
+  return { name, apiKey, baseURL, model, officeReview, timeoutMs };
 }
 
 export function modelConfigurationStatus(env: Environment = process.env) {
   try {
     const config = resolveModelConfig(env);
-    return { status: 'configured' as const, provider: config.name, model: config.model, connectivity: 'unchecked' as const };
+    return { status: 'configured' as const, provider: config.name, model: config.model, officeReview: config.officeReview, connectivity: 'unchecked' as const };
   } catch (error) {
     return { status: 'unconfigured' as const, provider: 'none', connectivity: 'unchecked' as const,
       message: error instanceof TypeError ? '模型服务地址格式不正确。' : (error as Error).message };

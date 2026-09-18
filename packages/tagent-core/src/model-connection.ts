@@ -1,3 +1,5 @@
+import type { OfficeReviewProfile } from './office-delivery.js';
+
 export interface ModelConnectionPreview {
   id: string;
   token: string;
@@ -34,6 +36,7 @@ export interface ModelConnectionView {
   configured: boolean;
   provider?: string;
   model?: string;
+  officeReview?: OfficeReviewProfile;
   endpoint?: string;
   configurationError?: string;
   activeId?: string;

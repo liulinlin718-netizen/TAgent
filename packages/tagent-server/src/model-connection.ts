@@ -2,14 +2,14 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import { calculateCost, classifyProviderError, MODEL_PRICING } from '@tagent/ai';
 import type { LLMProvider } from '@tagent/ai';
-import type { ModelConnectionCheck, ModelConnectionPreview, ModelConnectionView, PersistenceAdapter } from '@tagent/core';
+import type { ModelConnectionCheck, ModelConnectionPreview, ModelConnectionView, PersistenceAdapter, OfficeReviewProfile } from '@tagent/core';
 
 const KEY = 'model-checks';
 const PROMPT = 'Reply with exactly TAGENT_CONNECTION_OK.';
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const number = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
-type Connection = { provider: LLMProvider; model: string; endpoint: string; timeoutMs: number; fingerprint: string };
+type Connection = { provider: LLMProvider; model: string; officeReview?: OfficeReviewProfile; endpoint: string; timeoutMs: number; fingerprint: string };
 type StoredCheck = Omit<ModelConnectionCheck, 'persisted'> & { tokenHash: string };
 type Consent = { preview: ModelConnectionPreview; fingerprint: string };
 export class ModelConnectionError extends Error {
@@ -77,7 +77,8 @@ export class ModelConnectionManager {
     const common = { checks: structuredClone(checks), activeId: this.active?.id, retryAfterMs: this.retryAfter() };
     try {
       const connection = this.connect();
-      return { ...common, configured: true, provider: connection.provider.name, model: connection.model, endpoint: connection.endpoint };
+      return { ...common, configured: true, provider: connection.provider.name, model: connection.model, endpoint: connection.endpoint,
+        officeReview: connection.officeReview ? { ...connection.officeReview } : { model: connection.model, reasoning: 'disabled' } };
     } catch {
       return { ...common, configured: false, configurationError: '模型配置不可用，请由部署管理员检查 Provider、API Key、模型名称和服务地址。' };
     }

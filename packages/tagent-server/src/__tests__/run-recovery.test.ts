@@ -85,13 +85,16 @@ describe('run crash recovery', () => {
     const { store, persistence, workspaceId, sessionId, journal } = await setup();
     await store.beginRun(workspaceId, sessionId, runId, text);
     const original = officeProgress(true), current = officeProgress();
+    original.review.model = current.review.model = 'deepseek-v4-pro';
+    original.review.reasoning = current.review.reasoning = 'low';
     original.review.revisionAttempt = { ...original.review.revisionAttempt!, status: 'received', rawOutput: '修订后的正文', unsettledRequests: 0 };
     current.output = '修订后的正文'; current.review.previous = original;
     await journal.setOfficeDelivery(current);
     const reopened = await Store.open(persistence); await recoverInterruptedRuns(reopened, persistence);
     const answer = reopened.getMessages(workspaceId, sessionId).at(-1)!;
     expect(answer.content).toContain(current.output);
-    expect(answer.deliveryReview).toMatchObject({ status: 'unverified', receipt: { status: 'pending', unsettledRequests: 1 }, previous: original });
+    expect(answer.deliveryReview).toMatchObject({ status: 'unverified', model: 'deepseek-v4-pro', reasoning: 'low',
+      receipt: { status: 'pending', unsettledRequests: 1 }, previous: original });
     expect(answer.cost).toBe(0);
     expect(answer.content).toContain('可能仍被计费');
   });
@@ -119,7 +122,7 @@ describe('run crash recovery', () => {
     expect(result.deliveryReview?.receipt?.rawOutput).toBeUndefined();
   });
 
-  it.each(['checks', 'previous', 'receipt', 'coverage'])('rejects a corrupt office %s checkpoint without replay or overwriting the evidence', async field => {
+  it.each(['checks', 'previous', 'receipt', 'coverage', 'reasoning'])('rejects a corrupt office %s checkpoint without replay or overwriting the evidence', async field => {
     const { store, persistence, workspaceId, sessionId, journal } = await setup();
     await store.beginRun(workspaceId, sessionId, runId, text);
     await journal.setOfficeDelivery(officeProgress());
@@ -127,7 +130,7 @@ describe('run crash recovery', () => {
     const checkpoint = await persistence.load<{ officeDelivery: { review: Record<string, unknown> } }>(key, { officeDelivery: { review: {} } });
     checkpoint.officeDelivery.review[field] = field === 'checks' ? [{ status: 'passed' }]
       : field === 'previous' ? { output: 'bad', review: { previous: {} } }
-      : field === 'coverage' ? { expectedBlocks: 1, checkedBlocks: 2 } : { status: 'received', usage: { cost: 'not-a-number' } };
+      : field === 'coverage' ? { expectedBlocks: 1, checkedBlocks: 2 } : field === 'reasoning' ? 'unsupported' : { status: 'received', usage: { cost: 'not-a-number' } };
     await persistence.save(key, checkpoint);
     const reopened = await Store.open(persistence); await recoverInterruptedRuns(reopened, persistence);
     const answer = reopened.getMessages(workspaceId, sessionId).at(-1)!;

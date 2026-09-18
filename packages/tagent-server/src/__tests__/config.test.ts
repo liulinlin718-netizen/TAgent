@@ -63,6 +63,25 @@ describe('server startup configuration', () => {
     expect(env).toEqual({ TAGENT_ENV_FILE: '' });
     expect(modelConfigurationStatus(env).status).toBe('unconfigured');
   });
+  it('keeps office review on the task model unless deployment explicitly selects a priced same-provider profile', () => {
+    const env = { DEEPSEEK_API_KEY: 'private-fixture-key' };
+    expect(resolveModelConfig(env).officeReview).toEqual({ model: 'deepseek-flash', reasoning: 'disabled' });
+    const selected = { ...env, TAGENT_OFFICE_REVIEW_MODEL: ' deepseek-v4-pro ', TAGENT_OFFICE_REVIEW_REASONING: 'low' };
+    expect(resolveModelConfig(selected)).toMatchObject({ model: 'deepseek-flash', officeReview: { model: 'deepseek-v4-pro', reasoning: 'low' } });
+    expect(modelConfigurationStatus(selected)).toMatchObject({ model: 'deepseek-flash', officeReview: { model: 'deepseek-v4-pro', reasoning: 'low' }, connectivity: 'unchecked' });
+    expect(JSON.stringify(modelConfigurationStatus(selected))).not.toContain(env.DEEPSEEK_API_KEY);
+    expect(resolveModelConfig({ ...env, TAGENT_LLM_MODEL: 'unpriced-main-model' }).officeReview.model).toBe('unpriced-main-model');
+  });
+  it.each(['unknown-price', 'gpt-4o', 'claude-sonnet-4-20250514', '__proto__'])('rejects an unpriced or cross-provider office review model: %s', model => {
+    expect(() => resolveModelConfig({ DEEPSEEK_API_KEY: 'fixture', TAGENT_OFFICE_REVIEW_MODEL: model })).toThrow('TAGENT_OFFICE_REVIEW_MODEL');
+  });
+  it.each([
+    { DEEPSEEK_API_KEY: 'fixture', TAGENT_OFFICE_REVIEW_REASONING: 'high' },
+    { DEEPSEEK_API_KEY: 'fixture', TAGENT_OFFICE_REVIEW_MODEL: 'deepseek-chat', TAGENT_OFFICE_REVIEW_REASONING: 'low' },
+    { OPENAI_API_KEY: 'fixture', TAGENT_OFFICE_REVIEW_REASONING: 'low' },
+  ])('rejects unsupported office thinking configuration', env => {
+    expect(() => resolveModelConfig(env)).toThrow('TAGENT_OFFICE_REVIEW_REASONING');
+  });
   it('validates endpoint and timeout and does not expose keys in health', () => {
     const env = { OPENAI_API_KEY: 'secret-do-not-expose', OPENAI_BASE_URL: 'http://localhost:1234/v1', TAGENT_LLM_TIMEOUT_MS: '2000' };
     expect(resolveModelConfig(env).timeoutMs).toBe(2000);

@@ -32,7 +32,7 @@ import {
   createDefaultAgentCardV2,
   searchConfigurationStatus,
 } from '@tagent/core';
-import type { AgentCard, OrchestratorResult, PersistenceAdapter, ConversationContext } from '@tagent/core';
+import type { AgentCard, OrchestratorResult, PersistenceAdapter, ConversationContext, OfficeReviewProfile } from '@tagent/core';
 import { BenchmarkStore, createBenchmarkRoutes } from './benchmarks.js';
 import { OfficeBenchmarkError, OfficeBenchmarkManager, OfficeBenchmarkStore, createOfficeBenchmarkRoutes } from './office-benchmarks.js';
 import { ActiveRunError, Store } from './store.js';
@@ -145,11 +145,12 @@ const approvals = new ApprovalRegistry();
 // ─── Config ──────────────────────────────────────────
 
 
-function createProvider(config = resolveModelConfig()): { provider: LLMProvider; model: string } {
+function createProvider(config = resolveModelConfig()): { provider: LLMProvider; model: string; officeReview: OfficeReviewProfile } {
   const options = { apiKey: config.apiKey, baseURL: config.baseURL, name: config.name, timeout: config.timeoutMs, maxRetries: 0 };
   return {
     provider: config.name === 'anthropic' ? new AnthropicProvider(options) : new OpenAIProvider(options),
     model: config.model,
+    officeReview: config.officeReview,
   };
 }
 
@@ -640,7 +641,7 @@ async function runTask(c: Context) {
           result = { success: true, output: smoke.output, totalCost: 0, totalTokens: { input: 0, output: 0 },
             subResults: [{ agentId: 'research-agent', agentName: '研究助手', summary: smoke.output.slice(0, 800), cost: 0 }] };
         } else {
-          const { provider, model } = createProvider();
+          const { provider, model, officeReview } = createProvider();
           const handlers = createWorkflowHandlers({
             emit: (type, data, overrides) => emitTrace(stream, traces, workflowContext, type, data, overrides),
             approval: (agentId, request, task) => approvals.register({ workspaceId: wsId!, sessionId: sessId!, runId, agentId, ...task }, request, signal, async approval => {
@@ -668,6 +669,7 @@ async function runTask(c: Context) {
             captureSnapshot: snapshot => snapshots.save(snapshot),
             conversationContext,
             provider: journal.provider(provider), model: body.mode === 'explore' ? process.env.TAGENT_EXPLORE_MODEL?.trim() || model : model,
+            officeReview,
             mode: body.mode === 'explore' ? 'explore' : 'normal', signal, maxTotalCost: body.mode === 'explore' ? 0.15 : 1.0, agentPool, skillsRegistry, mcpRegistry,
             governanceTemplate: body.governanceTemplate || 'standard', searchProvider: searchSettings.provider,
             searchSessionId: createHash('sha256').update(`tagent-search:${wsId}:${sessId}`).digest('hex'),

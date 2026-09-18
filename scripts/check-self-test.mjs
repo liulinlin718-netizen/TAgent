@@ -27,7 +27,8 @@ test('runs every step without including Desktop, live models, installs or servic
   const visited = []; runChecks(step => visited.push(step));
   assert.deepEqual(visited, steps);
   assert.doesNotMatch(JSON.stringify(visited), /desktop|verify-live|verify-office-delivery|install|--serve|--live/);
-  assert.equal(steps.filter(step => step.args[0] === 'scripts/verify-office-runtime.mjs').length, 1);
+  assert.deepEqual(steps.filter(step => step.args[0] === 'scripts/verify-office-runtime.mjs').map(step => step.args),
+    [['scripts/verify-office-runtime.mjs'], ['scripts/verify-office-runtime.mjs', '--review-profile']]);
   assert.equal(steps.filter(step => step.args[0] === 'scripts/verify-bound-capabilities.mjs').length, 1);
   assert.equal(steps.filter(step => step.args.includes('scripts/release-source-self-test.mjs')).length, 1);
   assert.equal(steps.filter(step => step.args.includes('typecheck')).length, 4);

@@ -6,6 +6,10 @@ import { officeOutputBlocks, type OfficeBlockSchema } from './office-blocks.js';
 export { officeOutputBlocks } from './office-blocks.js';
 
 export interface OfficeMaterial { id: string; label: string; text: string; contextKind?: 'user_input' | 'assistant_unverified' | 'quoted_excerpt' | 'fork_summary' }
+export interface OfficeReviewProfile {
+  model: string;
+  reasoning: 'disabled' | 'low';
+}
 export interface OfficeCheck {
   id: string;
   method: 'programmatic' | 'model';
@@ -20,6 +24,7 @@ export interface OfficeDeliveryReview {
   blockSchema?: OfficeBlockSchema;
   status: 'passed' | 'needs_revision' | 'unverified';
   model: string;
+  reasoning?: OfficeReviewProfile['reasoning'];
   checkedAt: string;
   checks: OfficeCheck[];
   issues: string[];
@@ -324,11 +329,12 @@ export function interruptedOfficeReview(review: OfficeDeliveryReview): OfficeDel
 
 export async function verifyOfficeDelivery(options: {
   provider: LLMProvider; model: string; task: string; output: string; materials: OfficeMaterial[]; qualityChecks: string[];
+  reasoning?: OfficeReviewProfile['reasoning'];
   costTracker: CostTracker; maxCost: number; signal?: AbortSignal; onStage?: (stage: 'verify' | 'synthesize', summary: string) => void;
   maxRevisions?: 0 | 1;
   onProgress?: (result: OfficeDeliveryResult) => void | Promise<void>;
 }): Promise<OfficeDeliveryResult> {
-  const { provider, model, task, materials, costTracker, maxCost, signal } = options;
+  const { provider, model, task, materials, costTracker, maxCost, signal, reasoning = 'disabled' } = options;
   const blockSchema: OfficeBlockSchema = 'table-rows-v1';
   const runContext = { reviewDate: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date()), timeZone: 'Asia/Shanghai' };
   // Keep the established cap and budget reservation while dedicating output to complete structured checks.
@@ -350,7 +356,10 @@ export async function verifyOfficeDelivery(options: {
   const inspect = async (output: string, previous?: OfficeDeliveryReview['previous']): Promise<OfficeDeliveryResult> => {
     signal?.throwIfAborted();
     const messages = reviewMessages(output);
-    const save = (result: OfficeDeliveryResult) => publish({ ...result, review: { ...result.review, ...(previous ? { previous } : {}) } });
+    const save = (result: OfficeDeliveryResult) => publish({ ...result, review: { ...result.review, reasoning, ...(previous ? { previous } : {}) } });
+    if (reasoning === 'low' && !(provider.name === 'deepseek' && ['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-pro'].includes(model))) {
+      return save(unverified(output, '当前提供方或模型不支持所选办公核对思考模式；未调用模型，保留原稿。'));
+    }
     if (messages.reduce((sum, message) => sum + message.content.length, 0) > MAX_CONTEXT || officeOutputBlocks(output, blockSchema).length > 80) return save(unverified(output, '输入或输出超出本轮完整核对容量；未截断材料后宣称通过。'));
     if (!affordable(messages, reviewTokens)) return save(unverified(output, '剩余预算或模型价格不足，未执行交付核对；已保留原稿。'));
     const pending = pendingReceipt(messages, reviewTokens);
@@ -359,7 +368,7 @@ export async function verifyOfficeDelivery(options: {
     let response: LLMResponse;
     try {
       signal?.throwIfAborted();
-      response = await provider.call({ model, messages, maxTokens: reviewTokens, temperature: 0, signal, purpose: 'verification', reasoning: 'disabled' });
+      response = await provider.call({ model, messages, maxTokens: reviewTokens, temperature: 0, signal, purpose: 'verification', reasoning });
     } catch (error) {
       const reason = signal?.aborted ? '任务已停止，核对未完整返回。' : classifyProviderError(provider.name, error).message;
       return save(unverified(output, `${reason} 保留原稿，不自动重试网络请求；未收到用量的请求可能仍被计费。`, { ...pending, status: 'request_failed', error: reason }));
@@ -417,7 +426,7 @@ export async function verifyOfficeDelivery(options: {
   let response: LLMResponse;
   try {
     signal?.throwIfAborted();
-    response = await provider.call({ model, messages, maxTokens: MAX_REVISION_TOKENS, temperature: 0.2, signal });
+    response = await provider.call({ model, messages, maxTokens: MAX_REVISION_TOKENS, temperature: 0.2, signal, reasoning });
   } catch (error) {
     const reason = signal?.aborted ? '任务已停止，修订未完整返回。' : classifyProviderError(provider.name, error).message;
     first.review.revisionAttempt = { ...pending, status: 'request_failed', error: reason };

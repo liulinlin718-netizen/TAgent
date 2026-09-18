@@ -153,7 +153,7 @@ export type { ResearchSource, ResearchAssessment, PublicationEvidence } from './
 export { assessResearchSources } from './research-evidence.js';
 export type { ResearchReportReview, ResearchDraft, ResearchFinding, ResearchCitationIssue } from './research-report.js';
 export { completeOfficeReviewReceipt, interruptedOfficeReview } from './office-delivery.js';
-export type { OfficeDeliveryReview, OfficeDeliveryResult, OfficeCheck, OfficeReviewReceipt } from './office-delivery.js';
+export type { OfficeDeliveryReview, OfficeDeliveryResult, OfficeCheck, OfficeReviewReceipt, OfficeReviewProfile } from './office-delivery.js';
 export type { PersistenceAdapter } from './persistence.js';
 export { PostgresPersistence } from './postgres-persistence.js';
 export { RedisCache } from './redis-cache.js';

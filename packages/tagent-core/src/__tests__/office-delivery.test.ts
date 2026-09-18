@@ -295,6 +295,47 @@ describe('office review validation', () => {
 });
 
 describe('bounded office delivery verification and revision', () => {
+  it('uses the explicit review model and reasoning for both reviews and the single revision', async () => {
+    const draft = '合计320万元。', fixed = '合计310万元。', first = review(draft);
+    first.blocks[0].verdict = 'unsupported';
+    const call = vi.fn<LLMProvider['call']>().mockResolvedValueOnce(response(JSON.stringify(first)))
+      .mockResolvedValueOnce(response(fixed)).mockResolvedValueOnce(response(JSON.stringify(review(fixed))));
+    const opts = options(call);
+    const result = await verifyOfficeDelivery({ ...opts, output: draft, model: 'deepseek-v4-pro', reasoning: 'low',
+      provider: { ...provider(call), name: 'deepseek' } });
+    expect(call).toHaveBeenCalledTimes(3);
+    expect(call.mock.calls.map(([params]) => [params.model, params.reasoning, params.maxTokens, params.tools]))
+      .toEqual([['deepseek-v4-pro', 'low', 12288, undefined], ['deepseek-v4-pro', 'low', 6144, undefined], ['deepseek-v4-pro', 'low', 12288, undefined]]);
+    expect(result.review).toMatchObject({ status: 'passed', model: 'deepseek-v4-pro', reasoning: 'low',
+      previous: { output: draft, review: { model: 'deepseek-v4-pro', reasoning: 'low' } } });
+    expect(opts.costTracker.totalCost).toBeCloseTo(.03);
+  });
+  it('charges the selected review price against the remaining shared task budget without falling back', async () => {
+    const call = vi.fn<LLMProvider['call']>(), opts = options(call);
+    opts.costTracker.record('deepseek-flash', { inputTokens: 100, outputTokens: 100, cost: .04 });
+    const result = await verifyOfficeDelivery({ ...opts, maxCost: .08, model: 'deepseek-v4-pro', reasoning: 'low',
+      provider: { ...provider(call), name: 'deepseek' } });
+    expect(call).not.toHaveBeenCalled();
+    expect(result.output).toBe(opts.output);
+    expect(result.review).toMatchObject({ status: 'unverified', model: 'deepseek-v4-pro', reasoning: 'low' });
+    expect(result.review.issues.join()).toContain('预算');
+    expect(opts.costTracker.totalCost).toBe(.04);
+  });
+  it.each([['fixture', 'deepseek-v4-pro'], ['deepseek', 'deepseek-chat']])('rejects unsupported low reasoning without a paid request: %s/%s', async (name, model) => {
+    const call = vi.fn<LLMProvider['call']>();
+    const result = await verifyOfficeDelivery({ ...options(call), model, reasoning: 'low', provider: { ...provider(call), name } });
+    expect(call).not.toHaveBeenCalled(); expect(result.review.status).toBe('unverified');
+    expect(result.review.issues.join()).toContain('不支持');
+  });
+  it('does not retry or revise a truncated thinking review', async () => {
+    const truncated = { ...response('{'), stopReason: 'max_tokens' as const };
+    const call = vi.fn<LLMProvider['call']>().mockResolvedValue(truncated);
+    const result = await verifyOfficeDelivery({ ...options(call), model: 'deepseek-v4-pro', reasoning: 'low',
+      provider: { ...provider(call), name: 'deepseek' } });
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(result.review.status).toBe('unverified'); expect(result.review.revisionAttempt).toBeUndefined();
+    expect(result.review.receipt).toMatchObject({ stopReason: 'max_tokens', usage: { cost: .01 }, unsettledRequests: 0 });
+  });
   it.each([
     ['deepseek', 'deepseek-flash', 12288], ['deepseek', 'deepseek-v4-pro', 12288],
     ['deepseek', 'deepseek-chat', 4096], ['fixture', 'deepseek-flash', 4096],

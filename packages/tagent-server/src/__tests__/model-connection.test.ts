@@ -23,6 +23,20 @@ async function setup() {
 const consent = (manager: ModelConnectionManager) => { const { id, token } = manager.preview(); return { id, token, confirmed: true }; };
 
 describe('explicit model connection check', () => {
+  it('displays an independent office profile without running or silently testing that model', async () => {
+    const f = await setup();
+    const officeReview = { model: 'deepseek-v4-pro', reasoning: 'low' as const };
+    const manager = await ModelConnectionManager.open(f.persistence, () => ({ ...f.connect(), officeReview }));
+    expect(manager.view().officeReview).toEqual(officeReview);
+    manager.view().officeReview!.model = 'changed-by-view-consumer';
+    expect(manager.view().officeReview?.model).toBe('deepseek-v4-pro');
+    expect(f.call).not.toHaveBeenCalled();
+    const preview = manager.preview();
+    expect(preview.model).toBe('deepseek-chat');
+    await manager.start({ id: preview.id, token: preview.token, confirmed: true }); await manager.waitForIdle();
+    expect(f.call).toHaveBeenCalledTimes(1);
+    expect(f.call.mock.calls[0][0].model).toBe('deepseek-chat');
+  });
   it('view and preview are free, redact credentials and disclose a single bounded fixed prompt', async () => {
     const { manager, persistence, call } = await setup();
     expect(manager.view()).toMatchObject({ configured: true, checks: [] });

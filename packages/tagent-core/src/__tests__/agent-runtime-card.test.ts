@@ -19,7 +19,7 @@ const provider = (call: LLMProvider['call']): LLMProvider => ({ name: 'fixture',
 afterEach(() => { vi.restoreAllMocks(); bridge.execute.mockClear(); });
 
 describe('configured office agent execution', () => {
-  it.each(['fallback', 'single', 'multiple'])('keeps evidence scope through drafting, synthesis, review and one revision (%s)', async mode => {
+  it.each(['fallback', 'single', 'multiple', 'separate-review'])('keeps evidence scope through drafting, synthesis, review and one revision (%s)', async mode => {
     const pool = new AgentPool(), agent = pool.getAgent('project-agent')!;
     agent.constraints.allowedTools = [];
     vi.spyOn(pool, 'findBestAgentForTask').mockReturnValue(agent);
@@ -59,7 +59,11 @@ describe('configured office agent execution', () => {
         if (system.startsWith('你是办公交付助手')) syntheses++; else drafts++;
         return reply(draft);
       });
-    const result = await runOrchestrator({ provider: provider(call), model: 'deepseek-chat', agentPool: pool }, input);
+    const officeReview = { model: 'deepseek-v4-pro', reasoning: 'low' as const };
+    const result = await runOrchestrator({ provider: { ...provider(call), name: mode === 'separate-review' ? 'deepseek' : 'fixture' },
+      model: 'deepseek-chat', agentPool: pool, ...(mode === 'separate-review' ? { officeReview } : {}) }, input, {
+      onAgentSpawned: () => { officeReview.model = 'unpriced-changed-during-run'; },
+    });
     expect(result.output).toBe(corrected);
     expect(result.deliveryReview?.previous?.output).toBe(draft);
     expect(result.deliveryReview?.previous?.review.status).toBe('needs_revision');
@@ -67,6 +71,13 @@ describe('configured office agent execution', () => {
     expect({ reviews, revisions, drafts, syntheses }).toEqual({ reviews: 2, revisions: 1,
       drafts: mode === 'multiple' ? 2 : 1, syntheses: mode === 'multiple' ? 1 : 0 });
     expect(agent.constraints.allowedTools).toEqual([]);
+    for (const [params] of call.mock.calls) {
+      const verifying = params.purpose === 'verification' || params.messages[0].content.startsWith('你是办公交付修订器');
+      expect(params.model).toBe(mode === 'separate-review' && verifying ? 'deepseek-v4-pro' : 'deepseek-chat');
+      if (mode === 'separate-review' && verifying) expect(params.reasoning).toBe('low');
+      else expect(params.reasoning).not.toBe('low');
+    }
+    expect(result.deliveryReview?.model).toBe(mode === 'separate-review' ? 'deepseek-v4-pro' : 'deepseek-chat');
   });
 
   it.each([true, false])('passes bound Skill checks into verification and honors failed results (single=%s)', async single => {

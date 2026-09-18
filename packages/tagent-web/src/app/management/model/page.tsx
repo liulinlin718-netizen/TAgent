@@ -91,6 +91,8 @@ export default function ModelConnectionPage() {
           <dl className={styles.facts}>
             <div><dt>服务商</dt><dd>{view.provider}</dd></div>
             <div><dt>模型</dt><dd>{view.model}</dd></div>
+            <div><dt>办公核对与修订模型</dt><dd>{view.officeReview?.model || view.model}</dd></div>
+            <div><dt>核对思考模式</dt><dd>{view.officeReview?.reasoning === 'low' ? '低强度' : '关闭'}</dd></div>
             <div className={styles.full}><dt>服务地址</dt><dd><code>{view.endpoint}</code></dd></div>
           </dl>
           <p className={styles.muted}>配置已读取，当前连通性需单独验证。API Key 不在页面显示或修改。</p>

@@ -13,6 +13,7 @@ import { fixtureOfficeCase, fixtureOfficeReview } from './fixtures/office-review
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'tagent-office-'));
 const serveMode = process.argv.includes('--serve');
+const reviewProfileMode = process.argv.includes('--review-profile');
 const controlPath = `/stop-${randomUUID()}`;
 let finishServing, child, logs = '', calls = 0;
 const serving = new Promise(done => { finishServing = done; });
@@ -64,6 +65,12 @@ const modelServer = createServer(async (request, response) => {
     const partialRepair = ['partial-repair', 'partial-still-invalid'].includes(mode);
     let content;
     calls++;
+    if (reviewProfileMode) {
+      const reviewing = system.includes('你是办公交付核对器') || system.includes('你是办公交付修订器');
+      assert.equal(input.model, reviewing ? 'deepseek-v4-pro' : 'deepseek-chat');
+      if (reviewing) { assert.equal(input.thinking?.type, 'enabled'); assert.equal(input.reasoning_effort, 'low'); }
+      else assert.notEqual(input.thinking?.type, 'enabled');
+    }
     if (system.includes('你是任务编排器')) content = plannedCases.includes(mode)
       ? JSON.stringify([{ id: 'office-direct', agentRole: 'document', objective: '根据用户给定材料完成整份办公交付物，不联网。' }]) : '[]';
     else if (system.includes('你是办公交付核对器')) {
@@ -123,7 +130,7 @@ const modelServer = createServer(async (request, response) => {
       content = mode === 'rows-repair' ? rowCase.revision : groundingCases[mode]?.revision ?? absoluteCases[mode]?.revision ?? (mode === 'cut-revision' ? 'PARTIAL_REVISION：尚未写完的修订正文。' : finalOutput(mode === 'failed' ? 320 : 310, partialRepair));
     } else content = mode === 'rows-repair' ? rowCase.draft : groundingCases[mode]?.draft ?? absoluteCases[mode]?.draft ?? (mode === 'export' ? exportOutput : finalOutput(partialRepair || ['repair', 'failed', 'cut-revision'].includes(mode) ? 320 : 310, mode === 'partial' || partialRepair));
     await delay(100);
-    response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ id: randomUUID(), object: 'chat.completion', model: 'deepseek-chat',
+    response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ id: randomUUID(), object: 'chat.completion', model: input.model,
       choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason:
         (system.includes('你是办公交付修订器') && mode === 'cut-revision')
         || (system.includes('你是办公交付核对器') && mode === 'cut-review') ? 'length' : 'stop' }],
@@ -139,8 +146,10 @@ async function start() {
   child = spawn(process.execPath, [join(root, 'packages/tagent-server/dist/index.js')], { cwd: temporaryRoot, windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, TAGENT_WORKSPACE_ROOT: temporaryRoot, TAGENT_ENV_FILE: '',
       PORT: String(port), TAGENT_HOST: '127.0.0.1', NODE_ENV: 'test', DATABASE_URL: '', REDIS_URL: '',
-      DEEPSEEK_API_KEY: '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: 'local-office-only',
-      OPENAI_BASE_URL: `http://127.0.0.1:${modelPort}/v1`, TAGENT_LLM_PROVIDER: 'openai', TAGENT_LLM_MODEL: 'deepseek-chat',
+      DEEPSEEK_API_KEY: reviewProfileMode ? 'local-office-only' : '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: reviewProfileMode ? '' : 'local-office-only',
+      DEEPSEEK_BASE_URL: `http://127.0.0.1:${modelPort}/v1`, OPENAI_BASE_URL: `http://127.0.0.1:${modelPort}/v1`,
+      TAGENT_LLM_PROVIDER: reviewProfileMode ? 'deepseek' : 'openai', TAGENT_LLM_MODEL: 'deepseek-chat',
+      TAGENT_OFFICE_REVIEW_MODEL: reviewProfileMode ? 'deepseek-v4-pro' : '', TAGENT_OFFICE_REVIEW_REASONING: reviewProfileMode ? 'low' : '',
       TAGENT_ACCESS_TOKEN: '', TAGENT_PUBLIC_ORIGIN: '', TAGENT_WEB_ORIGINS: 'http://127.0.0.1:3000' } });
   child.stdout.on('data', chunk => { logs = (logs + chunk).slice(-5000); }); child.stderr.on('data', chunk => { logs = (logs + chunk).slice(-5000); });
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -159,7 +168,15 @@ const cases = [];
 try {
   await start();
   const workspaceId = (await json('/api/workspaces')).workspaces[0].id;
-  for (const [index, mode] of ['pass', 'repair', 'failed', 'malformed', 'cut-review', 'partial', 'partial-repair', 'partial-still-invalid', 'cut-revision', 'export', ...Object.keys(groundingCases), ...Object.keys(absoluteCases), 'rows-repair'].entries()) {
+  if (reviewProfileMode) {
+    const state = await json('/api/model-connection');
+    assert.equal(state.model, 'deepseek-chat');
+    assert.deepEqual(state.officeReview, { model: 'deepseek-v4-pro', reasoning: 'low' });
+    assert.equal(calls, 0, 'Reading the office profile must not call a model');
+  }
+  const selectedCases = reviewProfileMode ? ['pass', 'repair']
+    : ['pass', 'repair', 'failed', 'malformed', 'cut-review', 'partial', 'partial-repair', 'partial-still-invalid', 'cut-revision', 'export', ...Object.keys(groundingCases), ...Object.keys(absoluteCases), 'rows-repair'];
+  for (const [index, mode] of selectedCases.entries()) {
     const beforeCalls = calls;
     const response = await fetch(base + (index === 0 ? '/api/agent/run' : '/api/agent/orchestrate'), { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ workspaceId, message: `office-case-${mode}：${(mode === 'rows-repair' ? rowCase.task : undefined) ?? groundingCases[mode]?.task ?? absoluteCases[mode]?.task ?? '仅根据给定材料生成收入简报，不联网。1月100万元，2月120万元，3月90万元。未提供成本或业务原因。'}` }), signal: AbortSignal.timeout(45000) });
@@ -174,6 +191,8 @@ try {
     const status = ['failed', 'cut-revision', 'serial-failed'].includes(mode) ? 'needs_revision' : ['malformed', 'cut-review', 'partial', 'partial-still-invalid'].includes(mode) ? 'unverified' : 'passed';
     assert.equal(final.deliveryReview.status, status); assert.equal(final.success, status === 'passed');
     assert.equal(final.deliveryReview.blockSchema, 'table-rows-v1');
+    assert.equal(final.deliveryReview.model, reviewProfileMode ? 'deepseek-v4-pro' : 'deepseek-chat');
+    assert.equal(final.deliveryReview.reasoning, reviewProfileMode ? 'low' : 'disabled');
     assert.equal(final.persisted, true); assert.ok(final.totalCost > 0);
     assert.equal(trace.filter(event => event.type === 'complete').length, 1);
     assert.ok(trace.some(event => event.data.stage === 'verify'));
@@ -289,7 +308,7 @@ try {
   assert.equal(calls, callsBeforeControls, 'Read-only exploration must obey tool policy before search/model calls');
   await json('/api/agents/research-agent', { constraints: research.constraints }, 'PUT');
   console.log(JSON.stringify({ status: 'passed', fixtureOnly: true, cases: cases.length, localModelCalls: calls,
-    restart: true, runtimeMetrics: true, snapshotFork: true, scheduleControls: true, explorePolicy: true, userWrites: 0 }));
+    reviewProfileMode, restart: true, runtimeMetrics: true, snapshotFork: true, scheduleControls: true, explorePolicy: true, userWrites: 0 }));
   if (serveMode) {
     console.log(JSON.stringify({ base, workspaceId, cases: cases.map(({ mode, sessionId }) => ({ mode, sessionId })), stopUrl: `http://127.0.0.1:${modelPort}${controlPath}` }));
     await serving;
