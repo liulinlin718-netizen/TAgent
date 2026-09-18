@@ -99,6 +99,6 @@ pnpm check
 
 `.github/workflows/check.yml` 定义 Windows/Linux、Node24的相同检查，不配置模型密钥、不自动部署。Actions固定到完整commit SHA，仓库权限只读且不保留checkout凭据。用法参考 [checkout](https://github.com/actions/checkout/tree/d23441a48e516b6c34aea4fa41551a30e30af803)、[setup-node](https://github.com/actions/setup-node/tree/249970729cb0ef3589644e2896645e5dc5ba9c38) 和 [pnpm setup](https://github.com/pnpm/action-setup/tree/b906affcce14559ad1aafd4ab0e942779e9f58b1)。
 
-本轮没有推送源码或触发云端任务。CI定义尚未取得实际云端结果，Linux和最低Node版本也未在本轮运行，不标为已验收。还需独立完成依赖安全审计、真实搜索与六角色交付、200+节点性能与完整可访问性、TLS/访问保护部署、数据库备份恢复，以及上线清单中的治理/Session/运行时能力。
+2026-09-18经用户明确授权发布后，提交`dd7416d9f048f3003dd33c455cd134a0c737e8bb`已通过[云端运行35320375043](https://github.com/liulinlin718-netizen/TAgent/actions/runs/35320375043)。官方API核对Ubuntu和Windows两项job均实际完成锁文件安装与`pnpm check`，不是仅提交了工作流定义。最低Node版本仍未覆盖；此结果不证明真实模型交付质量、依赖完整安全、全部可访问性、公网主机或PostgreSQL部署已验收。其他各轮能力进展以[当前目标交付核对](./release-readiness.md#当前目标交付核对2026-09-18)为准，不将这里旧的开放项重复当作新开发要求。
 
-`.gitignore` 已忽略 `.tagent/`、`output/`、`.playwright-cli/`、`.pnpm-store/`、`.tmp/` 和构建缓存。**忽略规则不影响已被Git跟踪的文件。** 当前 `.tagent/agents.json`、`.tagent/skills.json`、`.tagent/skills/research-deepdive.md`、`.tagent/traces`，以及旧Lighthouse报告和desktop压缩包仍需发布前分类审查。本轮未删除、改写或移除这些文件的Git跟踪；不要直接把整个工作目录或未审查的Git历史公开发布。
+`.gitignore` 已忽略 `.tagent/`、`output/`、`.playwright-cli/`、`.pnpm-store/`、`.tmp/`、构建缓存和真实`.env.*`，只保留`.env.example`。**忽略规则不影响已被Git跟踪的文件。** 2026-09-18已单独用`git rm --cached`停止跟踪旧`.tagent/`、Lighthouse报告及desktop压缩包，不删除本机文件，不重写此前已公开的Git历史。本次源码完成常见凭据与已配置密钥对照检查；这不是完整历史秘密审计。不要直接压缩工作目录或将实测会话、模型返回及运行日志作为源码发布。

@@ -15,10 +15,18 @@
 | 可解释治理、Trace 和 Session | 原因/约束/裁决回查、JSONL索引分页、完整/摘要分支、Diff与原文摘取引用已有实现和记录；本轮快照确认分支及重启检查通过 | 不是不可篡改审计，不自动 Merge，不重放历史工具 |
 | Runtime/Explore | 事件驱动运行指标、持久化周期待办、人工发送、只读检索加有界摘要已实现；本轮暂停/删除/重启、工具拒绝后最终说明及零额外模型调用通过 | 固定间隔待办，不是完整 Cron 或无人值守付费；探索摘要不是完整事实核查 |
 | Benchmark 评分诚实、人工触发 | 静态配置估算、已保存运行观察、固定材料实跑、确认与费用提示、历史与失败项已接入 | 不冒充外部权威榜单，真实题库校准仍需额外工作 |
-| 本机可运行、数据保留 | 已构建 Core/Server，保留此前 Web 生产构建并重启；health正常，用户会话、Skills和环境配置哈希不变 | 未公开部署或执行云端CI；本轮只跑与变更相关的必要检查，不声称全仓新一轮验收 |
-| 三个独立开源小项目 | 三个子任务均已完成；独立 ESM/CLI、类型、MIT/NOTICE和合成示例已交付，174项测试记录保留。另离线打包并解包验证，三个CLI仅获各自包目录读取权限时取得预期结果；包共50,950字节，文件清单与SHA-256留存于`output/opensource` | 没有远程发布或申请包名；不复制凭据和真实数据，不扩展为完整产品 |
+| 本机可运行、数据保留 | 已构建 Core/Server，保留此前 Web 生产构建并重启；health正常，用户会话、Skills和环境配置哈希不变。发布提交另已通过 GitHub Windows/Ubuntu 的锁定依赖安装及完整 `pnpm check`，见下节 | CI 不等于公网部署或真实模型内容验收，最低 Node 版本及其他主机环境未覆盖 |
+| 三个独立开源小项目 | 三个子任务均已完成；独立 ESM/CLI、类型、MIT/NOTICE和合成示例已交付，174项测试记录保留。经用户明确授权，三个独立 GitHub 仓库已公开并核对远端提交；链接见下节。此前离线打包记录仍保留在本机 `output/opensource` | 未发布 npm 或申请包名；不复制凭据和真实数据，不扩展为完整产品 |
 
 当前剩余缺口是研究/项目整份报告的内容质量，不再是未跑过真实页面流程。本轮已按用户确认启用独立于旧$1的追加额度，最多16次/$0.20，实际14次/峰时无缓存估算$0.0295077，无本轮未知用量，剩余2次未用。旧账未知用量保持不变；没有重置任一批次。不能以新增产品功能或反复跑模拟测试代替内容判断。Desktop、Docker、自动 Merge、多租户、无限递归、无人值守付费调度继续不在本轮范围。
+
+## GitHub 交付与云端构建（2026-09-18）
+
+- 主项目 [TAgent](https://github.com/liulinlin718-netizen/TAgent) 已正常推送 `dd7416d9f048f3003dd33c455cd134a0c737e8bb`，没有强推或改写旧历史。源码、测试、文档和 MIT 许可证一起交付。
+- 三个独立仓库分别为 [Agent Trace Kit](https://github.com/liulinlin718-netizen/agent-trace-kit)（`b99a196`）、[Approval-First Import](https://github.com/liulinlin718-netizen/approval-first-import)（`bd15560`）、[Evidence-Bound Review](https://github.com/liulinlin718-netizen/evidence-bound-review)（`69203a2`）。各自只有独立源码根提交，不携带主项目历史；官方公开 API 核对四个仓库的完整 SHA 与本地一致。不是 npm 发布或生产质量认证。
+- [GitHub Actions 35320375043](https://github.com/liulinlin718-netizen/TAgent/actions/runs/35320375043) 对上述主项目提交的 `check (ubuntu-latest)` 与 `check (windows-latest)` 均为成功；分别实际执行 Node 24、pnpm 10.12.1、`pnpm install --frozen-lockfile --ignore-scripts` 和 `pnpm check`。只证明该提交在这两个 CI 环境通过工程门槛，不代替付费模型、真实交付内容、最低 Node 版本或公网部署验收。
+- 本次新增/修改的475个文件通过常见凭据模式与本机已配置密钥的对照检查，暂存树无运行数据、环境文件或嵌套 Git 仓库；不是完整历史秘密审计。旧 `.tagent/`、Lighthouse 报告和 Desktop 压缩包仅停止跟踪，本机文件保留，旧 Git 历史未清除。用户会话、Skills和环境配置哈希不变。
+- 本次发布及回查没有外部模型/搜索付费调用，也没有重跑完整本地验收。上一追加批次已关闭，不重新使用剩余次数或重置台账；修复后的研究/项目完整报告仍缺真实内容复核。旧失败报告与用量回执保留，模型自评或有限规则通过都不等于事实认证。
 
 ## 追加授权与真实页面回查（2026-09-18）
 
@@ -729,5 +737,5 @@ npx --package @playwright/cli playwright-cli -s=<session> run-code --filename=sc
 - 当前 Workspace 持久化是单进程顺序提交整份快照；多进程写入与租户隔离尚未实现。SaaS/多副本上线前必须升级存储并做竞争写测试。
 - 不会自动找回旧版本仅存在于内存、且已经随旧进程退出而丢失的聊天。不得伪造恢复结果。
 - 已有未提交代码和运行数据保留；发布前需要区分源码、测试夹具、私有数据和构建产物，完善忽略规则与备份策略。
-- 根目录 `.gitignore` 已转为UTF-8，并忽略运行目录、输出、依赖缓存和浏览器记录。忽略规则不会清除已跟踪文件；`.tagent/agents.json`、`.tagent/skills.json` 等仍须发布前审查，详见构建与发布校验。不得将实测会话、模型返回或运行日志作为源码一并发布。
+- 根目录 `.gitignore` 已转为UTF-8，并忽略运行目录、输出、依赖缓存和浏览器记录。2026-09-18发布已将`.tagent/agents.json`、`.tagent/skills.json`等从当前Git树停止跟踪，本机文件保留；不代表旧历史被删除或已完成历史秘密审计。不得将实测会话、模型返回或运行日志作为源码一并发布，详见构建与发布校验。
 - plan 中的首 token < 500ms、首屏 < 2s、看板 60fps、Lighthouse ≥ 90、移动端和 200+ 节点要求保留，必须在指定环境实测，不根据旧报告推断通过。
