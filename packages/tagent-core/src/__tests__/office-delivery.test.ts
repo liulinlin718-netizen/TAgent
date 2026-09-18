@@ -45,6 +45,8 @@ describe('office review validation', () => {
     expect(template.blocks.map((item: { index: number }) => item.index)).toEqual(Array.from({ length: 19 }, (_, i) => i));
     expect(template.blocks.every((item: { verdict: unknown; evidence: unknown[] }) => item.verdict === null && item.evidence.length === 0)).toBe(true);
     expect(template.areas.map((item: { area: string }) => item.area)).toEqual(areas);
+    expect(Object.keys(template.blocks[0])).toEqual(['index', 'evidence', 'reason', 'verdict']);
+    expect(Object.keys(template.areas[0])).toEqual(['area', 'reason', 'status']);
     expect(() => parse(template, output)).toThrow(OfficeReviewValidationError);
   });
   it('retains independently valid checks while diagnosing the exact malformed block', () => {
@@ -364,6 +366,36 @@ describe('bounded office delivery verification and revision', () => {
     const checked = await verifyOfficeDelivery({ ...options(call, output), maxCost: .011 });
     expect(checked.review.status).toBe('unverified'); expect(checked.review.checks.find(check => check.id === 'calculation-0')?.status).toBe('failed');
     expect(checked.review.issues.join()).toContain('材料'); expect(checked.review.issues.join()).toContain('预算不足'); expect(call).toHaveBeenCalledTimes(1);
+  });
+  it('preserves a cited content failure and repairs once despite an unrelated invalid arithmetic record', async () => {
+    const original = '三个数合计310万元，业务因此一定增长。', fixed = '合计310万元。';
+    const first = review(original); first.blocks[0].verdict = 'unsupported';
+    first.blocks[0].reason = '原文数字不支持业务一定增长这一结论';
+    first.calculations = [{ operation: 'invalid' }];
+    const call = vi.fn<LLMProvider['call']>().mockResolvedValueOnce(response(JSON.stringify(first)))
+      .mockResolvedValueOnce(response(fixed)).mockResolvedValueOnce(response(JSON.stringify(review(fixed))));
+    const result = await verifyOfficeDelivery(options(call, original));
+    expect(call).toHaveBeenCalledTimes(3);
+    expect(result.output).toBe(fixed); expect(result.review.status).toBe('passed');
+    expect(result.review.previous?.output).toBe(original);
+    expect(result.review.previous?.review.status).toBe('unverified');
+    expect(result.review.previous?.review.issues.join()).toContain('算术');
+    const feedback = JSON.parse(call.mock.calls[1][0].messages[1].content).feedback;
+    expect(feedback).toContainEqual(expect.objectContaining({ outputQuote: original,
+      evidence: [{ materialId: 'input', label: '用户材料', quote: task }] }));
+  });
+  it.each(['no-evidence', 'area-only', 'invented-evidence', 'revision-disabled'])('does not repair a partial model review without a valid cited failure: %s', mode => {
+    const output = '合计310万元。', value = review(output);
+    value.blocks[0].verdict = 'unsupported'; value.calculations = [{ operation: 'invalid' }];
+    if (mode === 'no-evidence') value.blocks[0].evidence = [];
+    if (mode === 'area-only') { value.blocks[0].verdict = 'grounded'; value.areas[0].status = 'failed'; }
+    if (mode === 'invented-evidence') value.blocks[0].evidence[0].quote = '原文没有这一句';
+    const call = vi.fn<LLMProvider['call']>().mockResolvedValue(response(JSON.stringify(value)));
+    return verifyOfficeDelivery({ ...options(call, output), ...(mode === 'revision-disabled' ? { maxRevisions: 0 as const } : {}) }).then(result => {
+      expect(call).toHaveBeenCalledTimes(1);
+      expect(result.output).toBe(output); expect(result.review.status).toBe('unverified');
+      expect(result.review.revisionAttempt).toBeUndefined();
+    });
   });
   it.each(['passed', 'failed', 'partial'])('repairs a known error despite a partial first review, with final outcome %s', async outcome => {
     const original = '合计320万元。\n\n未提供成本。', first = review(original);
