@@ -62,12 +62,14 @@ export function inspectOfficeGrounding(task: string, output: string): OfficeChec
   if (serialInput && !permitsParallel) {
     for (const statement of statements) {
       if (conditionalSerialChange(statement) || correction.test(statement)) continue;
-      if (/(?:建议|应当|可以|可考虑|可评估|可尝试|采用|通过|改成|改为|安排|让)[^。\n]{0,32}(?:并行(?:开发|执行|处理|推进|开展)?|同时开展|同时进行)/.test(statement)) {
+      // A prohibition is not an action, and separate table cells are not one clause.
+      const action = statement.replace(/无并行条件|不允许并行|不得并行|禁止并行|不并行/g, match => ' '.repeat(match.length));
+      if (/(?:建议|应当|可以|可考虑|可评估|可尝试|采用|通过|改成|改为|安排|让)[^。\n|；;]{0,32}(?:并行(?:开发|执行|处理|推进|开展)?|同时开展|同时进行)/.test(action)) {
         add('serial-action', '建议违反已知串行约束', serialInput, statement,
           '当前任务明确要求串行，不能把并行化作为当前排期的可执行建议。保持已知依赖与工作日总数，只提出不违反原条件的方案；变更前提的替代方案必须明确另需用户许可。');
         continue;
       }
-      if (/(?:是否|能否|可否|能不能|可不可以)[^。\n]{0,65}(?:并行|同时开展|同时进行)|并行[^。\n]{0,30}(?:待确认|需确认|待定|待明确)/.test(statement)) {
+      if (/(?:是否|能否|可否|能不能|可不可以)[^。\n|；;]{0,65}(?:并行|同时开展|同时进行)|并行[^。\n|；;]{0,30}(?:待确认|需确认|待定|待明确)/.test(statement)) {
         add('serial', '已知条件被重复询问', serialInput, statement,
           '用户已给出串行或禁止并行的条件，这不是待补充信息。按该条件完成排期，删除重复询问；不改动仍未确定的人员或验收细节。');
       }

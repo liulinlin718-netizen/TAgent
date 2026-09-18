@@ -175,6 +175,28 @@ describe('office review validation', () => {
     expect(() => parse(value, output)).toThrow('算式');
   });
   it.each([
+    ['120 − 90 = **30万元**', 30, 'passed'],
+    ['**120** − *90* = ***30***', 30, 'passed'],
+    ['__90__ − _120_ = **−30**', -30, 'passed'],
+    ['剩余**30**万元（**120** - *90*）', 30, 'passed'],
+    ['90 − 120 = **30**', 30, 'failed'],
+    ['120 − 90 = **40**', 40, 'failed'],
+  ] as const)('checks formatted subtraction without altering evidence: %s', (output, result, status) => {
+    const value = review(output); value.calculations = [calculation('difference', result, [120, 90], output)];
+    expect(parse(value, output).checks.at(-1)).toMatchObject({ status, outputQuote: output,
+      evidence: [{ materialId: 'input', label: '用户材料', quote: task }] });
+  });
+  it.each(['* 2', '** 2', '+ 50', '/ 2'])('retains arithmetic operators beside emphasized operands: %s', suffix => {
+    const output = `差值-30万元（**120** - **90** ${suffix}）`, value = review(output);
+    value.calculations = [calculation('difference', -30, [120, 90], output)];
+    expect(() => parse(value, output)).toThrow('复合');
+  });
+  it('does not collapse multiple formatted equations into one check', () => {
+    const output = '**120** - 90 = **30**；90 - 120 = **-30**', value = review(output);
+    value.calculations = [calculation('difference', 30, [120, 90], output)];
+    expect(() => parse(value, output)).toThrow('一个完整算式');
+  });
+  it.each([
     ['剩余30万元（120 - 90）', 30, 'passed'], ['剩余30万元（90 − 120）', 30, 'failed'],
     ['差值−30万元（90 − 120）', -30, 'passed'], ['30万元(120 - 90，按原文计算)', 30, 'passed'],
   ] as const)('uses the written parenthetical subtraction in %s', (output, result, status) => {

@@ -86,6 +86,19 @@ describe('evidence-bound office contradiction checks', () => {
     expect(inspectOfficeGrounding(projectTask, '若未来另行批准改变串行条件，可考虑并行开展。')).toEqual([]);
     expect(inspectOfficeGrounding(projectTask, '不要并行开展，按11个工作日串行交付。')).toEqual([]);
   });
+  it.each([
+    '| 缓冲安排未说明 | 材料给定“无并行条件”，未说明缓冲安排 | 是否设置缓冲需用户决策 |',
+    '建议遵守无并行条件，缓冲安排未说明。',
+    '建议不允许并行，按串行排期。',
+    '| 建议 | 无并行条件 |',
+    '| 无并行条件 | 是否设置缓冲待确认 |',
+  ])('does not join unrelated cells or treat a prohibition as parallelization: %s', output => {
+    expect(inspectOfficeGrounding(projectTask, output)).toEqual([]);
+  });
+  it('still detects actual parallelization advice in a row mentioning the original constraint', () => {
+    const output = '| 原条件无并行条件 | 建议设计与开发并行推进 |';
+    expect(inspectOfficeGrounding(projectTask, output)).toContainEqual(expect.objectContaining({ label: '建议违反已知串行约束' }));
+  });
   it.each(['建议改为并行执行以缩短工期。', '建议更改设计与开发为并行推进。', '可以变更流程并行处理。'])('does not treat direct changes as conditional alternatives: %s', statement => {
     expect(inspectOfficeGrounding(projectTask, statement)).toEqual([expect.objectContaining({ status: 'failed', label: '建议违反已知串行约束' })]);
     expect(inspectOfficeGrounding(projectTask, '经用户批准后，另做并行方案；当前仍按串行交付。')).toEqual([]);

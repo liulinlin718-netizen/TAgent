@@ -1,5 +1,6 @@
 import { calculateCost, classifyProviderError, MODEL_PRICING, type CostTracker, type LLMProvider, type LLMResponse, type Message, type TokenUsage } from '@tagent/ai';
 import { randomUUID } from 'node:crypto';
+import { fromMarkdown } from 'mdast-util-from-markdown';
 import { inspectOfficeGrounding } from './office-grounding.js';
 import { officeOutputBlocks, type OfficeBlockSchema } from './office-blocks.js';
 export { officeOutputBlocks } from './office-blocks.js';
@@ -49,18 +50,13 @@ const AREAS = ['instructions', 'material_consistency', 'arithmetic', 'deliverabl
 const LABELS = { instructions: '指令与范围', material_consistency: '材料与推断', arithmetic: '数据与计算', deliverable: '交付结构', actions: '操作与权限陈述' };
 // Keep evidence scope identical when drafting, combining and repairing an office deliverable.
 export const OFFICE_MATERIAL_BOUNDARY = `### 用户材料与交付边界
-- 先区分已知条件、材料自述和真正未知；不得把已知条件列为待确认，不因缺少外部核实就改称材料未说明。用户要求核对冲突、评估风险，不代表冲突或风险已经成立，须先检查这个前提。
-- 每项数字、状态、责任和缺口只对应原文明确指向的对象。某岗位待定不等于所有阶段都无人负责；未说明其他阶段的责任人时写“材料未提供”，不能复用一个岗位填满整表，也不能断言现实无人负责或无法开工。
-- 原文明确的包含关系保留归因。数值差额可以计算，业务集合、口径、时点是否对应另行说明；不重复相加子集。未知口径不等于口径矛盾，日期未知不等于两份材料时点不同；缺少日期只限制跨时点业务解释，不使所有数字比较无意义。
-- 保留原文已给的名词，未知的是定义或对应关系，而不是该名词是否出现。“覆盖”的具体定义未提供，不可改写为未说明是否覆盖；口径是否一致未知，不可改写为无可比口径；两个数相同但关系未证实，不可直接认定巧合。建议核对某种对应关系时，也须保留原文已明确的集合包含关系。
-- 工期/依赖是排期条件，不自动成为已批准验收门槛或开工许可；串行不证明无法调整资源、毫无缓冲或某阶段工期过短。基于依赖可说明条件性影响，不凭空判断概率、实际延误或人员状态。
-- 风险按“材料依据 → 尚未发生的触发条件 → 条件成立时的影响 → 建议”表达；缺一项依据时缩小结论，不为凑表格行数补造风险。材料没写责任人，只能说明本次材料无法确认分工，不能写成现实中无法定位责任人或已无人承接；某岗位待定也不能自动扩大为各阶段分配/验收职责空缺。
-- 职位名称不自动授予项目整体职责。研发负责人待定，只能确认该岗位人选未定；不能据此推出无人或无法确认谁推进整个排期、分配全部任务、负责全部交付。其他任务责任以“本次材料未提供”为限。风险标题也必须准确：未说明缓冲不等于未含缓冲，未知项写成“缓冲安排未说明”，不是已确认的缺陷。
-- 条件性风险不设定未经给出的发生时间。前序若延期且其余工期与依赖不变，完成时间顺延，不是提前；返工何时开始、持续多久不能仅凭原排期确定。用户要求严格串行时，“为了缩短工期”不是取消该约束的许可；只有明确另需批准改变原条件的替代方案，才可讨论并行。
-- 缺少统计日期可以限制同一时点、业务范围及因果的解释，但不能写成“任何数字比较都无意义”。先给出材料中可以确认的字面关系或算术结果，再精确说明哪些业务判断仍不能确认，不把补证变成完成已知部分的前置门槛。
-- 模板不能补造事实。风险概率没有依据时省略或写未评估；建议在对应句就近标明，提出的验收规则、责任分工须待用户确认。不得将建议升级成必须先审批、任命或补资料才能开展全部工作。
-- 观测指标变化不证明方案导致改善，也不等于整体效率、收入或方向有效；标题和讲稿同样受限。预算待批不等于已有会议、决定期限或确定金额，末尾免责声明不能抵消正文的过强断言。
-- 只交付用户需要的内容，先完成已知条件下可确定的结果；必要缺口精确列出，不把无关补证、通用模板或理想交付标准当作用户要求。`;
+- 用户目标、篇幅和格式优先，Skill/模板不是额外要求。先交付已知条件下的结果，只列与当前任务有关的缺口。简短材料默认用紧凑正文、必要表格和少量建议，不重复扩写，不输出内部 SOP、自检过程或通用免责声明。
+- 已知、未知和已确认错误分开。不得把已知条件列为待确认，不因缺少外部核实就改称材料未说明。用户说要找矛盾或风险，不代表矛盾或风险已成立。逐个缺口回查原文：明确的包含关系在该材料内部成立，不能再询问是否包含；材料自述保留来源归因。
+- 数字与业务解释分开。可以复算差额，但相等的数字不证明集合对应，也不证明巧合；不把子集重复相加。口径是否一致未知，不可改写为无可比口径。日期未知不等于日期不同，也不使算术失效；系统日期不是来源日期。保留原文名词，不用假设替换其未给出的定义。
+- 每项状态、责任和缺口仅对应原文明示的对象。职位名称不自动授予项目整体职责，也不自动关联未给出的任务：某岗位待定只说明该岗位人选未定，不能扩展为其他阶段负责人待定、受其影响或无人推进。任务责任人没有提供时只写“材料未提供”，不补造映射、任命期限或开工阻碍。
+- 工期/依赖是计算条件，不自动成为已批准验收制度。严格串行不能为缩短工期而取消；改变前提的方案须明确另需用户批准。若前序延期且其余条件不变则完成时间顺延，不虚构返工时点。未说明缓冲不等于未含缓冲；风险标题同样不能把未知写成缺陷。
+- 风险只写有材料依据的条件性影响，不凑行数、不编概率。建议在对应句就近标明，新增验收规则和责任分工待用户确认，不升级为全部工作必须先审批或补资料。观测指标变化不证明方案导致改善；预算待批不证明已有金额、会议或期限。标题、表格、讲稿和结尾均遵守相同事实边界。
+- 提交前内部回查最强断言及所有“待确认”：已给的信息不重复补证；局部事实不扩大到整体；建议不伪装成现实状态。删去无依据的断言，而不是仅在末尾加保留说明。`;
 const MAX_CONTEXT = 60000;
 const MAX_REVIEW_TOKENS = 4096;
 const MAX_EXTENDED_REVIEW_TOKENS = 12288;
@@ -97,7 +93,27 @@ function describesReduction(quote: string, result: number): boolean {
   });
 }
 
+function arithmeticText(value: string): string {
+  type Node = { type: string; children?: Node[]; position?: { start: { offset?: number }; end: { offset?: number } } };
+  const ranges: [number, number][] = [];
+  const visit = (node: Node) => {
+    if (node.type === 'strong' || node.type === 'emphasis') {
+      const start = node.position?.start.offset, end = node.position?.end.offset;
+      const first = node.children?.[0]?.position?.start.offset, last = node.children?.at(-1)?.position?.end.offset;
+      if (start !== undefined && end !== undefined && first !== undefined && last !== undefined) {
+        ranges.push([start, first], [last, end]);
+      }
+    }
+    node.children?.forEach(visit);
+  };
+  // Remove only parsed emphasis delimiters, never multiplication signs or other syntax.
+  visit(fromMarkdown(value));
+  for (const [start, end] of ranges.sort((a, b) => b[0] - a[0])) value = value.slice(0, start) + value.slice(end);
+  return value;
+}
+
 function subtraction(quote: string, operands: number[], result: number): { value: number; explicit: boolean } {
+  quote = arithmeticText(quote);
   // A complete written equation is authoritative about operand order, not the desired answer.
   const number = String.raw`(?:[-+\u2212]\s*)?\d+(?:,\d{3})*(?:\.\d+)?`;
   const equation = new RegExp(String.raw`(?<![\d.,+\-\u2212*/])(${number})\s*[-\u2212]\s*(${number})\s*[=＝]\s*(${number})(?![\d.,])`, 'g');

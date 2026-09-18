@@ -33,9 +33,9 @@ describe('configured office agent execution', () => {
       .mockImplementation(async params => {
         const system = params.messages[0].content;
         expect(system).toContain(OFFICE_MATERIAL_BOUNDARY);
-        expect(system).toContain('材料依据 → 尚未发生的触发条件');
-        expect(system).toContain('材料没写责任人');
-        expect(system).toContain('条件性风险不设定未经给出的发生时间');
+        expect(system).toContain('风险只写有材料依据的条件性影响');
+        expect(system).toContain('任务责任人没有提供时只写“材料未提供”');
+        expect(system).toContain('不虚构返工时点');
         expect(params.tools?.length ?? 0).toBe(0);
         if (params.purpose === 'verification') {
           reviews++;
