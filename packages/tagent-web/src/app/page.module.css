@@ -3,6 +3,7 @@
 .app {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: transparent;
 }
@@ -20,9 +21,40 @@
   z-index: var(--z-sticky);
 }
 
+/* 侧边栏内容区 — 配合宽度动画做淡入淡出 */
+.sidebarContent {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 200ms ease, visibility 200ms ease;
+  /* 展开时延迟淡入，等宽度到位 */
+  transition-delay: 150ms;
+}
+
+/* 折叠时立即淡出，不等宽度动画 */
+.sidebarCollapsed .sidebarContent {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition-delay: 0ms;
+}
+
 .sidebarCollapsed {
   width: 64px;
   min-width: 64px;
+}
+
+/* 折叠时隐藏 logo 文字和点阵，只显示展开按钮 */
+.sidebarCollapsed .logoText,
+.sidebarCollapsed .logoDotGrid {
+  display: none;
+}
+
+.sidebarCollapsed .sidebarHeader {
+  justify-content: center;
+  padding: var(--space-5) var(--space-2);
 }
 
 .sidebarHeader {
@@ -64,6 +96,7 @@
 }
 
 .iconBtn {
+  flex-shrink: 0;
   background: none;
   border: none;
   color: var(--color-text-muted);
@@ -140,6 +173,7 @@
   font-weight: var(--font-weight-medium);
   cursor: pointer;
   text-align: left;
+  text-decoration: none;
   transition: all var(--transition-fast);
 }
 
@@ -161,6 +195,91 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Session 行包装 — 支持 hover 操作菜单 */
+.sessRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.sessRow:hover .sessActions, .sessRow:focus-within .sessActions {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Session 操作下拉菜单 */
+.sessActions {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 150ms ease;
+  z-index: 10;
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  border: 1px solid var(--border-light);
+}
+
+@media (hover: none), (max-width: 700px) {
+  .sessRow { flex-wrap: wrap; }
+  .sessRow .sessActions { position: static; transform: none; flex-basis: 100%; justify-content: flex-end; opacity: 1; visibility: visible; border: 0; background: transparent; }
+  .sessRow .sessActionBtn { min-width: 36px; min-height: 36px; }
+}
+
+.sessActionBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+  white-space: nowrap;
+  padding: 0 6px;
+  width: auto;
+  gap: 2px;
+}
+
+.sessActionBtn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.sessActionBtn.danger:hover {
+  background: rgba(220, 38, 38, 0.15);
+  color: #ef4444;
+}
+
+/* Fork 类型徽章 */
+.sessForkBadge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 10px;
+  font-weight: 500;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.sessForkBadge.forkFull { background: rgba(99, 102, 241, 0.15); color: #818cf8; }
+.sessForkBadge.forkSummary { background: rgba(20, 184, 166, 0.15); color: #2dd4bf; }
+
+/* 树形子节点缩进 */
+.sessTreeChild {
+  margin-left: 16px;
+  border-left: 1px solid var(--border-light);
+  padding-left: 8px;
 }
 
 .sidebarFooter {
@@ -192,6 +311,8 @@
 /* ─── Main Content (极简主区) ─── */
 .main {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -205,10 +326,11 @@
   justify-content: space-between;
   padding: var(--space-5) var(--space-8);
   height: 72px;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  flex-shrink: 0;
+  gap: var(--space-4);
+  position: relative;
+  background: var(--color-bg-base);
+  border-bottom: 1px solid var(--border-light);
   z-index: var(--z-sticky);
 }
 
@@ -216,24 +338,37 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
 }
 
 .wsName {
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm);
   color: var(--color-text-primary);
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sessName {
   font-size: var(--text-sm);
   color: var(--color-text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .headerRight {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  flex-shrink: 0;
 }
+
+.workflowTriggerSlot { width: 38px; height: 38px; flex: 0 0 38px; }
 
 .statusIndicator {
   display: flex;
@@ -249,126 +384,33 @@
   box-shadow: var(--shadow-xs);
 }
 
-.statusDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-success);
-  box-shadow: 0 0 8px var(--color-success);
-}
+.modelConnectionLink { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 38px; min-height: 38px; color: var(--color-text-secondary); font-size: 13px; text-decoration: none; }
+.modelConnectionLink:hover { color: var(--color-text-primary); }
+.modelConnectionLink:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; border-radius: 4px; }
 
 /* ─── Messages Area ─── */
 .messages {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 100px var(--space-8) 160px; /* 留出顶部和底部悬浮输入框空间 */
+  padding: var(--space-6) var(--space-8);
   display: flex;
   flex-direction: column;
   align-items: center; /* 居中对齐对话 */
   gap: var(--space-8);
 }
 
-/* ─── Welcome Hero (x.ai + converge.ai 高级融合) ─── */
-.welcome {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  max-width: 800px;
-  min-height: 60vh;
-  text-align: center;
-}
-
-/* 浮动生命体装饰 ← converge.ai */
-.blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-  z-index: -1;
-  animation: float 20s ease-in-out infinite;
-  opacity: 0.6;
-}
-.blob1 {
-  width: 400px; height: 400px;
-  background: var(--aurora-blue);
-  top: 10%; left: -10%;
-}
-.blob2 {
-  width: 300px; height: 300px;
-  background: var(--aurora-purple);
-  bottom: 0%; right: 0%;
-  animation-delay: -10s;
-}
-
-@keyframes float {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(40px, -40px) scale(1.05); }
-}
-
-.heroOrb {
-  margin-bottom: var(--space-6);
-}
-
-/* 高级感排版 */
-.welcomeTitle {
-  font-size: var(--text-hero);
-  font-weight: var(--font-weight-normal);
-  letter-spacing: var(--tracking-tighter);
-  color: var(--color-text-primary);
-  line-height: var(--leading-tight);
-  margin-bottom: var(--space-4);
-}
-.welcomeTitle span {
-  font-weight: var(--font-weight-semibold);
-}
-
-.welcomeSubtitle {
-  font-size: var(--text-lg);
-  color: var(--color-text-secondary);
-  max-width: 32rem;
-  line-height: var(--leading-normal);
-  margin-bottom: var(--space-10);
-}
-
-/* Pill 建议按钮 */
-.suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  justify-content: center;
-}
-
-.suggestion {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 12px 24px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border-light);
-  background: var(--color-bg-surface);
-  color: var(--color-text-secondary);
-  font-size: var(--text-sm);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  transition: all var(--transition-base);
-  box-shadow: var(--shadow-xs);
-}
-
-.suggestion:hover {
-  border-color: var(--border-focus);
-  color: var(--color-text-primary);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-}
+.agentTaskButton { display: flex; align-items: center; gap: 8px; }
+.agentTaskButton svg { flex-shrink: 0; }
+.agentTaskButton:disabled { cursor: default; opacity: .5; }
+.agentTaskButton:focus-visible { outline: 2px solid var(--color-text-secondary); outline-offset: -2px; }
 
 /* ─── Chat Message Bubbles ─── */
 .message {
   display: flex;
   gap: var(--space-4);
   width: 100%;
-  max-width: 800px; /* 控制最大阅读宽度 */
+  max-width: 940px; /* 控制最大阅读宽度 */
 }
 
 .user {
@@ -401,6 +443,11 @@
   max-width: 85%;
 }
 
+.assistant .messageBody {
+  width: 100%;
+  max-width: 100%;
+}
+
 .user .messageBody {
   align-items: flex-end;
 }
@@ -411,14 +458,26 @@
   font-size: var(--text-base);
   white-space: pre-wrap;
   word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 /* x.ai 风格的极简 AI 气泡 (无明显边界，或极薄面) */
 .assistant .messageContent {
   color: var(--color-text-primary);
   background: transparent;
-  padding: var(--space-2) 0; /* 更像一篇文章 */
+  padding: var(--space-4) 0;
 }
+
+/* Markdown 内容区：覆盖 pre-wrap，交给 markdown 控制格式 */
+.assistantMd {
+  width: 100%;
+  max-width: 100%;
+  white-space: normal !important;
+}
+
+.thinking { color: var(--color-text-muted); font-style: italic; }
 
 /* 用户气泡: 黑底白字药丸形状 */
 .user .messageContent {
@@ -428,57 +487,73 @@
   box-shadow: var(--shadow-sm);
 }
 
-.cursor {
-  display: inline-block;
-  width: 8px;
-  height: 1.2em;
-  background: var(--color-text-primary);
-  vertical-align: middle;
-  margin-left: 4px;
-  animation: blink 1s step-end infinite;
-}
-
-@keyframes blink { 50% { opacity: 0; } }
-
-/* ─── Trace Timeline (悬浮面板式) ─── */
-.traceTimeline {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: var(--space-4);
-  border-radius: var(--radius-lg);
-  background: var(--color-bg-surface);
+.streamingStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: fit-content;
+  margin-top: var(--space-3);
+  padding: 7px 12px;
   border: 1px solid var(--border-light);
-  box-shadow: var(--shadow-sm);
-  width: 100%;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-bg-surface) 84%, transparent);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  box-shadow: var(--shadow-xs);
 }
 
-.traceItem {
+.streamingStatus::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-accent-secondary);
+  animation: statusPulse 1.35s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.readError {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  font-size: var(--text-xs);
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
   color: var(--color-text-secondary);
 }
+.readError > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.sessionRunning { display: inline-flex; flex-shrink: 0; color: var(--color-text-secondary); }
+.sessionRunning svg { animation: sessionSpin 1.2s linear infinite; }
+@keyframes sessionSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .sessionRunning svg { animation: none; } }
 
-.traceIcon {
-  font-size: var(--text-sm);
-  margin-top: 2px;
-}
-.traceLabel {
-  font-family: var(--font-mono);
-  line-height: 1.4;
-}
-.traceLabel strong {
-  color: var(--color-text-primary);
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 10px 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
 }
 
 /* ─── Floating Input Area (核心创新: 悬浮胶囊输入) ─── */
 .inputArea {
-  position: absolute;
-  bottom: 40px;
-  left: 50%;
-  transform: translateX(-50%);
+  position: relative;
+  flex-shrink: 0;
+  margin: 12px auto 24px;
   width: 100%;
   max-width: 760px;
   padding: 0 var(--space-4);
@@ -491,9 +566,7 @@
   gap: var(--space-3);
   padding: 12px 12px 12px 24px;
   border-radius: 36px;
-  background: var(--panel-glass);
-  backdrop-filter: var(--panel-glass-blur);
-  -webkit-backdrop-filter: var(--panel-glass-blur);
+  background: var(--color-bg-base);
   border: 1px solid var(--border-light);
   box-shadow: var(--shadow-lg);
   transition: all var(--transition-base);
@@ -507,6 +580,7 @@
 
 .input {
   flex: 1;
+  min-width: 0;
   background: none;
   border: none;
   color: var(--color-text-primary);
@@ -515,7 +589,7 @@
   outline: none;
   resize: none;
   line-height: 1.5;
-  min-height: 24px;
+  min-height: 40px;
   max-height: 150px;
   padding: 8px 0;
 }
@@ -554,6 +628,13 @@
   box-shadow: none;
 }
 
+.runNotice {
+  padding: 0 16px 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
 .spinner {
   width: 20px;
   height: 20px;
@@ -572,22 +653,60 @@
 }
 
 /* Responsive */
-@media (max-width: 900px) {
-  .sidebar { width: 240px; min-width: 240px; }
-  .sidebarCollapsed { width: 0; min-width: 0; border: none; }
-  .welcomeTitle { font-size: var(--text-4xl); }
+.navigationBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  background: rgba(18, 22, 27, 0.3);
+}
+
+.mobileNavigation {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100vw - 32px));
+  height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--color-bg-base);
+  border-right: 1px solid var(--border-light);
+  box-shadow: var(--shadow-lg);
+}
+
+.mobileNavigation .sidebarHeader { flex-shrink: 0; }
+.mobileNavigation .sidebarContent { min-height: 0; }
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 1100px) {
+  /* Keeps SSR compact before the client media subscription mounts. */
+  .sidebar { display: none; }
 }
 
 @media (max-width: 600px) {
-  .app { flex-direction: column; }
-  .sidebar {
-    width: 100% !important;
-    min-width: 100% !important;
-    max-height: 50vh;
-    border-right: none;
-    border-bottom: 1px solid var(--border-light);
-  }
-  .sidebarCollapsed { max-height: 0; overflow: hidden; border: none; }
-  .inputArea { bottom: 20px; }
-  .messages { padding: 80px var(--space-4) 140px; }
+  .inputArea { margin-block: 8px 16px; }
+  .header { height: 56px; padding: 8px 12px; gap: 8px; }
+  .headerLeft { gap: 8px; }
+  .statusText { display: none; }
+  .messages { padding: var(--space-5) var(--space-4); }
 }
+.quoteOrigin { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; padding-bottom: 12px; margin-bottom: 16px; border-bottom: 1px solid var(--border-light); font-size: 13px; color: var(--color-text-secondary); }
+.quoteOrigin button { background: none; border: 0; padding: 0; color: var(--color-text-primary); text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; text-align: left; cursor: pointer; font: inherit; }
+.quoteOrigin button:disabled { cursor: default; text-decoration: none; color: var(--color-text-muted); }
+.contextNotice { margin: 0 0 12px; font-size: 13px; line-height: 1.6; color: var(--color-text-secondary); }
+.taskModes { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; font-size: 12px; }
+.taskModes button { padding: 6px 12px; border: 1px solid var(--border-light); border-radius: 4px; background: var(--color-bg-surface); color: var(--color-text-secondary); cursor: pointer; }
+.taskModes button[aria-pressed="true"] { color: #0d846d; border-color: #0d846d; background: var(--color-bg-surface); }
+.taskModes span { color: var(--color-text-muted); overflow-wrap: anywhere; }
+.taskModes button:disabled { cursor: default; opacity: .6; }

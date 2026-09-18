@@ -1,204 +1,153 @@
 'use client';
 
-/**
- * 治理仪表盘 — Phase 4 (plan §3.10 + §4.5)
- *
- * 成本趋势折线图 + 拦截事件统计 + 治理事件时间线
- */
-
 import { useEffect, useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
-import { Shield, AlertTriangle, CheckCircle, Clock, TrendingUp } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { ArrowDown, ArrowUpRight, CheckCircle, CircleAlert, Filter, RefreshCw, Shield, ShieldX } from 'lucide-react';
+import type { GovernanceRecord, GovernanceStats } from '@tagent/core';
+import { API_BASE, apiFetch } from '../../../lib/api-client';
+import { AccessControl } from '../../../components/AccessGate';
+import { useConversations } from '../../../components/ConversationProvider';
 import styles from './governance.module.css';
 
-interface GovernanceEvent {
-  id: string;
-  timestamp: number;
-  agentId: string;
-  policyType: string;
-  ruleName: string;
-  severity: string;
-  result: string;
-  message: string;
-  suggestion?: string;
-}
-
-interface GovernanceStats {
-  totalChecks: number;
-  totalBlocked: number;
-  totalWarnings: number;
-  byPolicyType: Record<string, { checks: number; blocked: number }>;
-  costTimeline: { timestamp: number; cost: number }[];
-}
-
-const API = 'http://localhost:3001';
-
-const SEVERITY_COLORS: Record<string, string> = {
-  hard: '#ef4444',
-  soft: '#f59e0b',
-  info: '#6366f1',
-};
-
-const RESULT_ICONS: Record<string, string> = {
-  passed: '✅',
-  blocked: '🔴',
-  warning: '⚠️',
-};
+type ResponseData = { events: GovernanceRecord[]; stats: GovernanceStats; nextCursor: string | null; note: string };
+const policyNames: Record<string, string> = { approval: '执行确认', resource: '资源与预算', security: '安全边界',
+  quality: '交付质量', alignment: '任务方向', organization: '协作规则' };
+const decisions: Record<string, string> = { pending: '等待确认', approved: '本次已许可', denied: '本次已拒绝',
+  expired: '超时拒绝', cancelled: '许可已失效', failed: '未取得许可' };
+const date = (time: number) => new Date(time).toLocaleString('zh-CN', { hour12: false });
+const policyName = (type: string) => Object.hasOwn(policyNames, type) ? policyNames[type] : type;
 
 export default function GovernancePage() {
-  const [events, setEvents] = useState<GovernanceEvent[]>([]);
-  const [stats, setStats] = useState<GovernanceStats | null>(null);
-  const [loading, setLoading] = useState(true);
-
+  const router = useRouter(), conversations = useConversations();
+  const [data, setData] = useState<ResponseData | null>(null);
+  const [loading, setLoading] = useState(true), [error, setError] = useState('');
+  const [fields, setFields] = useState({ sessionId: '', runId: '', agentId: '' });
+  const [query, setQuery] = useState(''), [cursor, setCursor] = useState(''), [revision, setRevision] = useState(0);
   useEffect(() => {
-    async function load() {
-      const [evRes, stRes] = await Promise.all([
-        fetch(`${API}/api/governance/events?limit=50`),
-        fetch(`${API}/api/governance/stats`),
-      ]);
-      const evData = await evRes.json();
-      const stData = await stRes.json();
-      setEvents(evData.events || []);
-      setStats(stData);
-      setLoading(false);
-    }
-    load();
-    // 每 10 秒自动刷新
-    const interval = setInterval(load, 10000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const policyBarData = stats ? Object.entries(stats.byPolicyType).map(([type, data]) => ({
-    name: type === 'resource' ? '资源' : type === 'security' ? '安全' : type === 'quality' ? '质量' : type === 'alignment' ? '方向' : type,
-    checks: data.checks,
-    blocked: data.blocked,
-  })) : [];
-
-  if (loading) {
-    return <div className={styles.container}><div className={styles.loading}>加载治理数据...</div></div>;
-  }
-
-  return (
-    <div className={styles.container}>
-      <header className={styles.header}>
-        <div>
-          <h1 className={styles.title}>🛡️ 治理仪表盘</h1>
-          <p className={styles.subtitle}>实时监控 Agent 治理事件、成本趋势和安全拦截</p>
-        </div>
-      </header>
-
-      {/* 统计卡片 */}
-      <div className={styles.statsGrid}>
-        <div className={styles.statCard}>
-          <div className={styles.statIcon}><Shield size={20} /></div>
-          <div className={styles.statBody}>
-            <span className={styles.statValue}>{stats?.totalChecks || 0}</span>
-            <span className={styles.statLabel}>总检查次数</span>
-          </div>
-        </div>
-        <div className={`${styles.statCard} ${styles.statDanger}`}>
-          <div className={styles.statIcon}><AlertTriangle size={20} /></div>
-          <div className={styles.statBody}>
-            <span className={styles.statValue}>{stats?.totalBlocked || 0}</span>
-            <span className={styles.statLabel}>硬约束拦截</span>
-          </div>
-        </div>
-        <div className={`${styles.statCard} ${styles.statWarning}`}>
-          <div className={styles.statIcon}><TrendingUp size={20} /></div>
-          <div className={styles.statBody}>
-            <span className={styles.statValue}>{stats?.totalWarnings || 0}</span>
-            <span className={styles.statLabel}>软约束预警</span>
-          </div>
-        </div>
-        <div className={styles.statCard}>
-          <div className={styles.statIcon}><CheckCircle size={20} /></div>
-          <div className={styles.statBody}>
-            <span className={styles.statValue}>{stats ? stats.totalChecks - stats.totalBlocked - stats.totalWarnings : 0}</span>
-            <span className={styles.statLabel}>安全通过</span>
-          </div>
-        </div>
+    const controller = new AbortController();
+    const params = new URLSearchParams(query);
+    params.set('limit', '30');
+    if (cursor) params.set('before', cursor);
+    void apiFetch(API_BASE + '/api/governance/events?' + params, {
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
+    }).then(async response => {
+      if (!response.ok) throw new Error('治理记录读取失败（HTTP ' + response.status + '），请稍后重试。');
+      const value: ResponseData = await response.json();
+      if (!controller.signal.aborted) {
+        setData(previous => ({ ...value, events: cursor && previous
+          ? [...previous.events, ...value.events.filter(event => !previous.events.some(old => old.id === event.id))]
+          : value.events }));
+        setError('');
+      }
+    }).catch(failure => {
+      if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : '治理记录读取失败');
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [query, cursor, revision]);
+  const refresh = () => { setLoading(true); setCursor(''); setRevision(value => value + 1); };
+  const stats = data?.stats;
+  const totals = [
+    { label: '已记录决策', value: stats?.totalChecks, icon: Shield },
+    { label: '拦截 / 拒绝记录', value: stats?.totalBlocked, icon: ShieldX },
+    { label: '预警 / 待确认记录', value: stats?.totalWarnings, icon: CircleAlert },
+    { label: '通过 / 许可记录', value: stats?.totalPassed, icon: CheckCircle },
+  ];
+  return <div className={styles.container}>
+    <header className={styles.header}>
+      <h1><Shield size={24} />治理记录</h1>
+      <div className={styles.actions}><AccessControl />
+        <button onClick={refresh} disabled={loading} title="刷新治理记录" aria-label="刷新治理记录"><RefreshCw size={17} /></button>
       </div>
-
-      {/* 图表区域 */}
-      <div className={styles.chartsGrid}>
-        {/* 成本趋势折线图 */}
-        <div className={styles.chartCard}>
-          <h3 className={styles.chartTitle}>📈 成本趋势</h3>
-          <div className={styles.chartBody}>
-            {stats?.costTimeline && stats.costTimeline.length > 0 ? (
-              <ResponsiveContainer width="100%" height={200}>
-                <LineChart data={stats.costTimeline}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
-                  <XAxis dataKey="timestamp" tickFormatter={(t) => new Date(t).toLocaleTimeString()} tick={{ fill: '#888', fontSize: 11 }} />
-                  <YAxis tick={{ fill: '#888', fontSize: 11 }} tickFormatter={(v) => `$${v.toFixed(3)}`} />
-                  <Tooltip contentStyle={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }} labelFormatter={(t) => new Date(t as number).toLocaleString()} formatter={(v: any) => [`$${Number(v).toFixed(4)}`, '成本']} />
-                  <Line type="monotone" dataKey="cost" stroke="#6366f1" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className={styles.emptyChart}>暂无成本数据 — 运行 Agent 任务后将自动记录</div>
-            )}
+    </header>
+    <details className={styles.filters}>
+      <summary><Filter size={16} />按任务或 Agent 筛选</summary>
+      <form onSubmit={event => {
+        event.preventDefault();
+        setQuery(new URLSearchParams(Object.entries(fields).filter(([, value]) => value.trim()).map(([key, value]) => [key, value.trim()])).toString());
+        refresh();
+      }}>
+        {(['sessionId', 'runId', 'agentId'] as const).map((key, i) => <label key={key}>
+          {['会话 ID', '任务 ID', 'Agent ID'][i]}
+          <input value={fields[key]} onChange={event => setFields(value => ({ ...value, [key]: event.target.value }))} maxLength={200} />
+        </label>)}
+        <button type="submit" disabled={loading}><Filter size={16} />筛选</button>
+        <button type="button" disabled={loading} onClick={() => { setFields({ sessionId: '', runId: '', agentId: '' }); setQuery(''); refresh(); }}>清除筛选</button>
+      </form>
+    </details>
+    {error && <p className={styles.error} role="alert">{error}{data ? ' 当前保留上次成功读取的数据。' : ''}</p>}
+    {loading && <p role="status" className={styles.note}>正在读取治理记录...</p>}
+    <main aria-busy={loading}>
+      <dl className={styles.stats}>
+        {totals.map(({ label, value, icon: Icon }) => <div key={label}><dt><Icon size={16} />{label}</dt><dd>{value ?? '-'}</dd></div>)}
+      </dl>
+      {data && <p className={styles.note}>{data.note}</p>}
+      <div className={styles.charts}>
+        <section aria-label="任务成本">
+          <h2>已保存任务的已知成本</h2>
+          <div className={styles.chart}>
+            {stats?.costTimeline.length ? <ResponsiveContainer width="100%" height={200} initialDimension={{ width: 300, height: 200 }}>
+              <LineChart data={stats.costTimeline} margin={{ top: 8, right: 14, left: 0, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
+                <XAxis dataKey="timestamp" tickFormatter={time => new Date(time).toLocaleDateString('zh-CN')} tick={{ fontSize: 11, fill: 'var(--color-text-muted)' }} minTickGap={35} />
+                <YAxis width={75} tickFormatter={value => '$' + (Number(value) === 0 ? '0' : Number(value).toPrecision(2))} tick={{ fontSize: 11, fill: 'var(--color-text-muted)' }} />
+                <Tooltip labelFormatter={time => date(Number(time))} formatter={value => ['$' + Number(value).toFixed(5), '本次任务']}
+                  contentStyle={{ background: 'var(--color-bg-surface)', color: 'var(--color-text-primary)', borderRadius: 6 }} />
+                <Line type="linear" dataKey="cost" stroke="#0d9488" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer> : <p className={styles.empty}>{query.includes('agentId=') ? '任务总成本不能归为单个 Agent，当前不展示成本趋势。' : '暂无符合条件的已保存成本记录。'}</p>}
           </div>
-        </div>
-
-        {/* 协议类型分布柱状图 */}
-        <div className={styles.chartCard}>
-          <h3 className={styles.chartTitle}>📊 协议触发分布</h3>
-          <div className={styles.chartBody}>
-            {policyBarData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={policyBarData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
-                  <XAxis dataKey="name" tick={{ fill: '#888', fontSize: 12 }} />
-                  <YAxis tick={{ fill: '#888', fontSize: 11 }} />
-                  <Tooltip contentStyle={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }} />
-                  <Bar dataKey="checks" name="总检查" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="blocked" name="拦截" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className={styles.emptyChart}>暂无协议触发数据</div>
-            )}
-          </div>
-        </div>
+          {!!stats?.costTimeline.length && <details><summary>成本明细（最近100个已保存任务）</summary>
+            <div className={styles.costRows}>{stats.costTimeline.map(item => <p key={item.runId}>
+              <time>{date(item.timestamp)}</time><code>{item.runId}</code><strong>${item.cost.toFixed(5)}</strong>
+            </p>)}</div>
+          </details>}
+        </section>
+        <section aria-label="规则分布">
+          <h2>规则记录分布</h2>
+          <dl className={styles.policies}>{Object.entries(stats?.byPolicyType || {}).map(([type, value]) => <div key={type}>
+            <dt>{policyName(type)}</dt><dd>{value.checks} 条 <span> / {value.blocked} 条拦截</span></dd>
+          </div>)}</dl>
+          {stats && !Object.keys(stats.byPolicyType).length && <p className={styles.empty}>暂无规则记录。</p>}
+        </section>
       </div>
-
-      {/* 事件时间线 */}
-      <div className={styles.timelineSection}>
-        <h3 className={styles.chartTitle}>🕐 治理事件时间线 — 决策链回溯</h3>
-        <div className={styles.timeline}>
-          {events.length > 0 ? events.map(event => (
-            <div key={event.id} className={`${styles.timelineItem} ${styles[`severity_${event.severity}`]}`}>
-              <div className={styles.timelineIcon}>
-                {RESULT_ICONS[event.result] || '•'}
-              </div>
-              <div className={styles.timelineBody}>
-                <div className={styles.timelineHeader}>
-                  <span className={styles.timelineAgent}>🤖 {event.agentId}</span>
-                  <span className={styles.timelineTime}><Clock size={12} /> {new Date(event.timestamp).toLocaleTimeString()}</span>
-                </div>
-                <p className={styles.timelineMessage}>{event.message}</p>
-                <div className={styles.timelineMeta}>
-                  <span className={styles.policyBadge} style={{ borderColor: SEVERITY_COLORS[event.severity] || '#888' }}>
-                    {event.policyType} · {event.ruleName}
-                  </span>
-                  <span className={styles.severityBadge} style={{ background: SEVERITY_COLORS[event.severity] || '#888' }}>
-                    {event.severity}
-                  </span>
-                </div>
-                {event.suggestion && (
-                  <p className={styles.suggestion}>💡 建议: {event.suggestion}</p>
-                )}
-              </div>
-            </div>
-          )) : (
-            <div className={styles.emptyTimeline}>
-              <Shield size={32} />
-              <p>尚无治理事件 — 运行 Agent 任务后，所有治理检查将在此记录</p>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+      <section className={styles.history} aria-label="治理决策记录">
+        <h2>决策记录 <span>{data?.events.length || 0} 条已加载</span></h2>
+        {data?.events.map(event => {
+          const blocked = event.result === 'blocked', passed = event.result === 'passed';
+          const Icon = blocked ? ShieldX : passed ? CheckCircle : CircleAlert;
+          return <article key={event.id} className={styles.record} data-result={event.result} data-event-id={event.id}>
+            <header><strong><Icon size={17} />{event.approval ? event.approval.status === 'pending' && event.persisted ? '当时等待确认' : decisions[event.approval.status] : blocked ? '已拦截' : passed ? '规则通过' : '预警'}</strong>
+              <time dateTime={new Date(event.timestamp).toISOString()}>{date(event.timestamp)}</time>
+            </header>
+            <p>{event.message}</p>
+            <dl className={styles.metadata}>
+              <div><dt>执行者</dt><dd>{event.agentName}</dd></div>
+              <div><dt>触发规则</dt><dd>{policyName(event.policyType)} · {event.ruleName}</dd></div>
+              <div><dt>保存状态</dt><dd>{event.persisted ? '已随任务保存' : '运行中，待最终保存'}</dd></div>
+            </dl>
+            {event.suggestion && <p className={styles.suggestion}>替代建议：{event.suggestion}</p>}
+            <details><summary>查看任务与决定详情</summary>
+              {event.decision && <dl className={styles.metadata}>
+                <div><dt>规则版本</dt><dd>{event.decision.ruleId} · v{event.decision.policyVersion} · {event.decision.template}</dd></div>
+                <div><dt>处置</dt><dd>{{ allow: '允许继续', stop: '停止后续操作', review: '保留问题待复核', inform: '提示，不追加操作' }[event.decision.effect]}</dd></div>
+                <div><dt>判断依据</dt><dd>{event.decision.reason}</dd></div>
+                {Object.entries(event.decision.inputs).map(([key, value]) => <div key={key}><dt>{({ currentCost: '已知费用', maxCost: '任务预算', currentIterations: '已用轮数', maxIterations: '轮数上限', toolName: '工具', approvalMode: '审批模式', allowed: '在白名单内', fissionDepth: '当前层数', maxFissionDepth: '层数上限', deliveryStatus: '交付核对状态', independentSources: '独立发布方数', activeAgentCount: '活跃Agent数', maxAgents: 'Agent上限' } as Record<string, string>)[key] || key}</dt><dd>{String(value)}</dd></div>)}
+              </dl>}
+              <dl className={styles.metadata}><div><dt>会话</dt><dd><code>{event.sessionId}</code></dd></div>
+                <div><dt>任务</dt><dd><code>{event.runId}</code>{event.taskId ? ' / ' + event.taskId : ''}</dd></div>
+                <div><dt>事件</dt><dd><code>{event.id}</code></dd></div></dl>
+              {event.approval && <><p>{event.approval.toolName} · {event.approval.redacted ? '已脱敏的参数预览' : '参数预览'}{event.approval.truncated ? '（不完整，不能批准）' : ''}</p>
+                <pre>{event.approval.argsPreview}</pre></>}
+            </details>
+            <footer><button onClick={() => { conversations.selectSession(event.workspaceId, event.sessionId); router.push('/'); }}>
+              <ArrowUpRight size={16} />查看来源任务</button></footer>
+          </article>;
+        })}
+        {data && !data.events.length && <p className={styles.empty}>没有符合条件的治理记录。</p>}
+        {data?.nextCursor && <button className={styles.more} disabled={loading} onClick={() => { setLoading(true); setCursor(data.nextCursor!); }}>
+          <ArrowDown size={16} />加载更早记录</button>}
+      </section>
+    </main>
+  </div>;
 }

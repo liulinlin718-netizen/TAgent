@@ -7,13 +7,19 @@
 
 import type { ToolDefinition } from '@tagent/ai';
 
+export interface ToolExecutionContext { signal?: AbortSignal }
+
 export interface ToolExecutor {
+  /** Trusted built-in metadata only; never accept this from MCP or imported Skills. */
+  approval?: 'local_read_only';
   definition: ToolDefinition;
-  execute(args: Record<string, unknown>): Promise<string>;
+  execute(args: Record<string, unknown>, context?: ToolExecutionContext): Promise<string>;
 }
 
 export class ToolRegistry {
   private tools = new Map<string, ToolExecutor>();
+
+  constructor(private signal?: AbortSignal) {}
 
   register(tool: ToolExecutor): void {
     this.tools.set(tool.definition.name, tool);
@@ -27,10 +33,12 @@ export class ToolRegistry {
     return Array.from(this.tools.values()).map(t => t.definition);
   }
 
-  async execute(name: string, args: Record<string, unknown>): Promise<string> {
+  async execute(name: string, args: Record<string, unknown>, context?: ToolExecutionContext): Promise<string> {
+    const signal = this.signal && context?.signal ? AbortSignal.any([this.signal, context.signal]) : context?.signal || this.signal;
+    signal?.throwIfAborted();
     const tool = this.tools.get(name);
     if (!tool) throw new Error(`Tool not found: ${name}`);
-    return tool.execute(args);
+    return tool.execute(args, { signal });
   }
 
   list(): string[] {

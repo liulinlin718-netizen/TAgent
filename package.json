@@ -3,18 +3,30 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@10.12.1",
+  "engines": {
+    "node": ">=22.13.0",
+    "pnpm": ">=10.12.1 <11"
+  },
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "clean": "turbo clean",
-    "test": "vitest"
+    "test": "vitest",
+    "check": "node scripts/check.mjs",
+    "local:build": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/local-app.ps1 -Action Build",
+    "local:start": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/local-app.ps1 -Action Start",
+    "local:stop": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/local-app.ps1 -Action Stop",
+    "local:status": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/local-app.ps1 -Action Status"
   },
   "devDependencies": {
+    "@eslint/js": "9.39.4",
+    "eslint": "9.39.4",
     "tsx": "^4.22.4",
     "turbo": "^2.5.0",
     "typescript": "^5.8.0",
+    "typescript-eslint": "8.60.0",
     "vitest": "^4.1.8"
   }
 }

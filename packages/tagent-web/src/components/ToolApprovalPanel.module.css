@@ -1,0 +1,14 @@
+.panel { margin: 16px 0; min-width: 0; }
+.request { border: 1px solid var(--border-light); border-left: 3px solid #0d9488; border-radius: 6px; padding: 18px 20px; margin-bottom: 12px; background: var(--color-bg-base); font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.request h3 { display: flex; gap: 8px; align-items: center; font-size: 15px; margin: 0 0 10px; }
+.request h3 svg { flex-shrink: 0; }
+.request p { margin: 6px 0; }
+.meta { color: var(--color-text-secondary); font-size: 12px; }
+.request pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-size: 12px; padding: 12px 0; margin: 0; }
+.request summary { cursor: pointer; font-size: 13px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 14px; }
+.panel button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--border-light); border-radius: 4px; padding: 8px 12px; min-height: 36px; font: inherit; font-size: 13px; cursor: pointer; background: var(--color-bg-surface); color: var(--color-text-primary); }
+.panel button:disabled { opacity: .5; cursor: not-allowed; }
+.error { display: flex; gap: 8px; color: #b91c1c; font-size: 13px; overflow-wrap: anywhere; }
+.error span { flex: 1; }
+@media (max-width: 600px) { .request { padding: 12px; } }

@@ -1,0 +1,74 @@
+async (page) => {
+  const base = await page.evaluate(() => new URL(location.href).searchParams.get('runFixture'));
+  if (!base || !/^http:\/\/127\.0\.0\.1:\d+$/.test(base) || /:(3000|3001)$/.test(base)) throw new Error('Isolated fixture required');
+  const errors = [], userRequests = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('request', request => { if (/^http:\/\/(localhost|127\.0\.0\.1):3001\/api\//.test(request.url())) userRequests.push(request.url()); });
+  const check = (value, message) => { if (!value) throw new Error(message); };
+  const panel = page.getByTestId('delivery-review').last();
+  const select = async mode => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.getByRole('button', { name: new RegExp(`^office-case-${mode}`) }).click();
+    await panel.waitFor();
+    if (!await panel.evaluate(element => element.open)) await panel.locator(':scope > summary').click();
+    await panel.ariaSnapshot();
+  };
+  await select('partial');
+  check((await panel.innerText()).includes('核对覆盖 18/19 段'), 'Partial coverage missing');
+  check((await panel.locator(':scope > summary').innerText()).includes('尚未完成核对'), 'Partial report incorrectly passed');
+  const bad = panel.locator('[data-review-status="unverified"]').first();
+  await bad.locator(':scope > summary').click();
+  check((await bad.innerText()).includes('blocks[index=6].verdict'), 'Exact failing field missing');
+  check(await panel.locator('[data-review-status="passed"]').count() === 24, 'Valid independent checks were discarded');
+  await panel.locator(':scope > summary').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'output/playwright/office-coverage-desktop.png' });
+  const receipt = panel.getByText('核对模型回执', { exact: true });
+  await receipt.click(); await panel.ariaSnapshot();
+  check((await panel.locator('pre').innerText()).includes('unexpected-verdict'), 'Malformed billed response not retained');
+  check((await panel.locator('pre').innerText()).includes('<img'), 'Raw fixture markup missing');
+  check(await panel.locator('img,script,iframe').count() === 0, 'Raw receipt rendered executable markup');
+  check(await page.evaluate(() => !window.__receiptExecuted), 'Receipt executed script');
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
+    await receipt.scrollIntoViewIfNeeded();
+    check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `Page overflow at ${width}`);
+    const bounds = await panel.locator('pre').boundingBox();
+    check(bounds.x >= 0 && bounds.x + bounds.width <= width + 1, 'Receipt clipped horizontally');
+    const raw = await panel.locator('pre').evaluate(element => ({ width: element.clientWidth, content: element.scrollWidth, height: element.clientHeight }));
+    check(raw.content <= raw.width + 1 && raw.height <= 300, 'Receipt lacks bounded scroll and wrapping');
+    await page.screenshot({ path: `output/playwright/office-receipt-${width}.png` });
+  }
+  await select('cut-revision');
+  check((await panel.locator(':scope > summary').innerText()).includes('未通过完整核对'), 'Truncated revision incorrectly passed');
+  await panel.getByText('修订模型回执', { exact: true }).click(); await panel.ariaSnapshot();
+  check((await panel.innerText()).includes('PARTIAL_REVISION'), 'Truncated paid revision lost');
+  check((await panel.innerText()).includes('输出达到长度限制'), 'Truncation not explained');
+  check((await page.getByRole('main').innerText()).includes('合计320万元'), 'Original draft was replaced by incomplete revision');
+  await panel.getByText('修订模型回执', { exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'output/playwright/office-revision-receipt-desktop.png' });
+  await select('malformed');
+  check((await panel.innerText()).includes('核对 JSON 无效'), 'Malformed JSON explanation missing');
+  await panel.getByText('核对模型回执', { exact: true }).click();
+  check((await panel.locator('pre').innerText()).includes('{invalid-review-json'), 'Invalid JSON response discarded');
+  await select('partial');
+  const waiting = page.waitForResponse(response => response.url() === base + '/api/agent/orchestrate');
+  const input = page.getByRole('textbox', { name: '输入任务，按 Enter 发送...' });
+  await input.fill('office-case-partial：仅根据给定材料生成收入简报，不联网。1月100万元，2月120万元，3月90万元。未提供成本或业务原因。');
+  await input.press('Enter');
+  const response = await waiting, stream = await response.text();
+  const endings = stream.split(/\r?\n\r?\n/).filter(block => /^event: complete$/m.test(block));
+  check(endings.length === 1, 'SSE missing unique final event');
+  await page.waitForFunction(() => !document.querySelector('textarea')?.disabled);
+  await panel.waitFor();
+  if (!await panel.evaluate(element => element.open)) await panel.locator(':scope > summary').click();
+  await panel.ariaSnapshot();
+  check((await panel.innerText()).includes('18/19'), 'Streamed coverage lost');
+  await panel.getByText('核对模型回执', { exact: true }).click();
+  const before = await panel.locator('pre').innerText();
+  await page.reload(); await select('partial'); await panel.getByText('核对模型回执', { exact: true }).click();
+  check(await panel.locator('pre').innerText() === before, 'Saved receipt changed after refresh');
+  check((await panel.locator(':scope > summary').innerText()).includes('尚未完成核对'), 'Reload changed partial status to passed');
+  check(errors.length === 0, errors.join('\n')); check(userRequests.length === 0, 'User backend contacted');
+  return { passed: true, coverage: '18/19', validChecksRetained: 24, invalidResultNotPassed: true, rawMarkupNotExecuted: true,
+    paidRevisionRetained: true, sse: true, reload: true, widths: [1440, 390, 320], userRequests: 0, errors };
+}

@@ -1,0 +1,74 @@
+.root { min-width: 0; margin-top: 16px; border-block: 1px solid var(--border-light); color: var(--color-text-primary); font-size: 14px; line-height: 1.65; letter-spacing: 0; overflow-wrap: anywhere; }
+.summary, .recordSummary { display: flex; align-items: center; gap: 8px; padding: 14px 4px; cursor: pointer; list-style: none; }
+.root summary::-webkit-details-marker, .recordSummary::-webkit-details-marker { display: none; }
+.root svg, .record svg { flex-shrink: 0; }
+.root :is(summary, button, pre, [tabindex]):focus-visible, .record :is(summary, button, [tabindex]):focus-visible { outline: 2px solid var(--color-text-secondary); outline-offset: 2px; }
+.chevron { transition: transform 150ms ease; }
+.root[open] > summary > .chevron, .record[open] > summary > .chevron { transform: rotate(90deg); }
+.overview { margin-left: auto; font-size: 12px; color: var(--color-text-secondary); }
+.content { padding: 0 8px 16px; min-width: 0; }
+.records { max-height: 640px; overflow-y: auto; scrollbar-gutter: stable; }
+.record { min-width: 0; font-size: 14px; line-height: 1.65; color: var(--color-text-primary); overflow-wrap: anywhere; }
+.record + .record { border-top: 1px solid var(--border-light); }
+.recordBody { padding: 0 8px 16px; min-width: 0; container-type: inline-size; }
+.metadata, .note { color: var(--color-text-secondary); font-size: 12px; margin: 6px 0 12px; }
+.tableScroll { width: 100%; max-width: 100%; overflow: auto; max-height: 400px; margin-block: 12px; }
+.tableScroll table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+.tableScroll caption { text-align: left; font-weight: 600; padding-bottom: 8px; }
+.tableScroll th, .tableScroll td { border-bottom: 1px solid var(--border-light); padding: 10px 12px; vertical-align: top; min-width: 100px; max-width: 260px; overflow-wrap: anywhere; }
+.tableScroll thead th { font-size: 12px; font-weight: 600; color: var(--color-text-secondary); background: var(--color-bg-base); }
+.tableScroll tbody th { font-weight: 500; }
+.numeric { font-variant-numeric: tabular-nums; }
+.numeric strong { font-weight: 600; }
+.compactLabel { display: none; }
+.longName { min-width: 0; max-width: 100%; }
+.longName > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; min-width: 0; }
+.longName > summary::-webkit-details-marker { display: none; }
+.namePreview { min-width: 0; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.expandLabel { flex-shrink: 0; font-size: 12px; color: var(--color-text-secondary); }
+.longName[open] > summary > .chevron { transform: rotate(90deg); }
+.fullName { display: block; margin-top: 8px; overflow-wrap: anywhere; }
+.subtext { display: block; font-size: 12px; margin-top: 4px; color: var(--color-text-secondary); }
+.warning, .warningText { color: #a04422; }
+.warning { font-size: 13px; margin: 8px 0; }
+:global([data-theme='dark']) .warning, :global([data-theme='dark']) .warningText { color: #f4b793; }
+.comparison { border-top: 1px solid var(--border-light); margin-top: 16px; padding-top: 16px; }
+.comparison h4 { font-size: 14px; font-weight: 600; margin: 0 0 10px; }
+.comparison dl, .audit dl { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 6px 12px; margin: 12px 0; }
+.comparison dt, .audit dt { color: var(--color-text-secondary); }
+.comparison dd, .audit dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.audit { border-top: 1px solid var(--border-light); margin-top: 12px; padding-top: 12px; font-size: 12px; }
+.audit > summary, .invalidExamples > summary { cursor: pointer; }
+.invalidExamples { margin-top: 8px; font-size: 12px; }
+.invalidExamples ul { margin: 8px 0; padding-left: 16px; }
+.invalidExamples code { font-size: 12px; white-space: pre-wrap; }
+.source { border-top: 1px solid var(--border-light); margin-top: 12px; padding-top: 12px; }
+.source button, .pagination button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; min-height: 36px; background: transparent; border: 1px solid var(--border-light); border-radius: 6px; color: var(--color-text-primary); font-size: 12px; cursor: pointer; }
+.source button:disabled { opacity: .55; cursor: wait; }
+.source pre { max-height: 280px; overflow: auto; white-space: pre; font-family: var(--font-mono); font-size: 12px; padding: 12px; border-left: 2px solid var(--border-light); }
+.pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--color-text-secondary); }
+.export { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-block: 10px; }
+.export button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; border: 1px solid var(--border-light); border-radius: 6px; padding: 6px 10px; font-size: 12px; background: transparent; color: var(--color-text-primary); cursor: pointer; }
+.export button:disabled { opacity: .55; cursor: wait; }
+.export .note, .export .warning { margin: 0; }
+@container (max-width: 560px) {
+  .statistics table, .statistics tbody, .profile table, .profile tbody { display: block; }
+  .statistics caption, .profile caption { display: block; }
+  .statistics thead, .profile thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .statistics tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 12px; padding-block: 12px; border-top: 1px solid var(--border-light); }
+  .statistics th, .statistics td, .profile th, .profile td { min-width: 0; max-width: none; padding: 0; border: 0; }
+  .statistics .group, .statistics .range { grid-column: 1 / -1; }
+  .compactLabel { display: block; margin-bottom: 4px; font-size: 12px; color: var(--color-text-secondary); }
+  .statistics .range { border-top: 1px dashed var(--border-light); padding-top: 8px; font-size: 12px; }
+  .statistics .range > .subtext { display: inline; margin-left: 10px; }
+  .profile tbody tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 8px; padding-block: 12px; border-top: 1px solid var(--border-light); }
+  .profile tbody th { grid-column: 1 / -1; }
+}
+@media (max-width: 600px) {
+  .summary, .recordSummary { flex-wrap: wrap; gap: 6px; padding-block: 10px; }
+  .overview { flex-basis: 100%; margin-left: 24px; }
+  .recordSummary .overview { flex-basis: auto; margin-left: auto; }
+  .recordBody, .content { padding-inline: 2px; }
+  .records { max-height: 520px; scrollbar-gutter: auto; }
+}
+@media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }

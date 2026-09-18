@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { GovernanceEngine, type GovernanceContext, type GovernanceTemplate } from '../governance.js';
+import { GovernanceEngine, type GovernanceContext } from '../governance.js';
 
 function makeCtx(overrides: Partial<GovernanceContext> = {}): GovernanceContext {
   return {
@@ -79,10 +79,11 @@ describe('GovernanceEngine', () => {
       expect(result.blockers[0].event.policyType).toBe('security');
     });
 
-    it('should always allow spawn_agent', () => {
+    it('must not grant spawn_agent an implicit whitelist bypass', () => {
       const engine = new GovernanceEngine('standard');
       const result = engine.evaluate(makeCtx({ toolName: 'spawn_agent', allowedTools: ['web_search'] }));
-      expect(result.allPassed).toBe(true);
+      expect(result.allPassed).toBe(false);
+      expect(result.blockers[0].event.decision).toMatchObject({ ruleId: 'tool_whitelist', effect: 'stop', inputs: { toolName: 'spawn_agent', allowed: false } });
     });
   });
 
@@ -128,6 +129,16 @@ describe('GovernanceEngine', () => {
   });
 
   // ─── evaluateAll ─────────────────────────────────
+  it('uses real delivery/source evidence instead of iterations to claim quality', () => {
+    const engine = new GovernanceEngine('quality_first');
+    const missing = engine.evaluateAll(makeCtx({ currentIterations: 10, currentCost: 0.1 }));
+    expect(missing.find(item => item.event.ruleName === 'output_quality')!.event.result).toBe('warning');
+    expect(missing.find(item => item.event.ruleName === 'source_diversity')!.event.result).toBe('warning');
+    const reviewed = engine.evaluateAll(makeCtx({ deliveryStatus: 'passed', independentSources: 3 }));
+    expect(reviewed.find(item => item.event.ruleName === 'output_quality')!.event.decision).toMatchObject({ effect: 'allow', inputs: { deliveryStatus: 'passed' } });
+    expect(reviewed.find(item => item.event.ruleName === 'source_diversity')!.event.result).toBe('passed');
+  });
+
   describe('evaluateAll', () => {
     it('should return all results including passed', () => {
       const engine = new GovernanceEngine('strict_cost');

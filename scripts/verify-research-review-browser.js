@@ -1,0 +1,58 @@
+// Open an existing research session before running with Playwright CLI. No task is submitted.
+async (page) => {
+  const check = (condition, message) => { if (!condition) throw new Error(message); };
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const sidebar = page.locator('aside').first();
+  if (await sidebar.evaluate(element => element.getBoundingClientRect().width < 100)) await page.getByRole('button', { name: 'Toggle Sidebar' }).click();
+  const selected = page.locator('button[class*="listItemActive"]').last();
+  await selected.waitFor({ state: 'visible' });
+  const sessionName = (await selected.innerText()).replace(/\s+/g, ' ').trim();
+  check(sessionName.length > 0, 'Selected session must have a visible accessible name');
+  const panel = page.getByTestId('research-review').last();
+  await panel.waitFor();
+  check(!await panel.evaluate(element => element.open), 'Evidence review must start collapsed');
+  await panel.locator(':scope > summary').click();
+  const snapshot = await panel.innerText();
+  const items = panel.locator('[data-review-status]');
+  const count = await items.count();
+  check(count > 0, 'Select a session with recorded finding checks');
+  const rejected = await panel.locator('[data-review-status="rejected"]').count();
+  check(rejected > 0, 'Select a report with a rejected finding to verify failure visibility');
+  await panel.locator('[data-review-status="supported"] > summary').first().click();
+  check(await panel.getByText('核对时的结论', { exact: true }).first().isVisible(), 'Exact reviewed text is absent');
+  check(await panel.getByText('匹配的原文片段', { exact: true }).first().isVisible(), 'Original passage is absent');
+  const failedItem = panel.locator('[data-review-status="rejected"]').first();
+  await failedItem.locator(':scope > summary').click();
+  check(await failedItem.locator('[class*="reason"]').isVisible(), 'Failure reason is not visible');
+  await failedItem.locator(':scope > summary').click();
+  await panel.getByText(/^全部来源（/).click();
+  const links = await panel.locator('a').evaluateAll(elements => elements.map(element => element.getAttribute('href')));
+  check(links.length > 0 && links.every(url => /^https?:\/\//.test(url)), 'Evidence links must be actual HTTP(S) URLs');
+  check(await page.locator('main a[href^="<"]').count() === 0, 'Markdown angle delimiters leaked into URLs');
+  await panel.getByText(/^全部来源（/).click();
+  await panel.locator(':scope > summary').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'output/playwright/research-review-desktop.png', animations: 'disabled' });
+  await panel.locator(':scope > summary').click();
+  check(!await panel.evaluate(element => element.open), 'Panel cannot be collapsed');
+
+  await page.reload();
+  await page.getByRole('button', { name: sessionName, exact: true }).click();
+  await panel.waitFor();
+  check(!await panel.evaluate(element => element.open), 'Reload must not expand the panel automatically');
+  await panel.locator(':scope > summary').click();
+  check(await panel.innerText() === snapshot, 'Stored review changed after reload and reopening the session');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Toggle Sidebar' }).click();
+  await panel.locator(':scope > summary').scrollIntoViewIfNeeded();
+  check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Mobile page overflows horizontally');
+  const bounds = await panel.boundingBox();
+  check(bounds.x >= 0 && bounds.x + bounds.width <= 391, 'Review panel overlaps the mobile viewport');
+  const messages = await page.locator('main > [class*="messages"]').boundingBox();
+  const composer = await page.locator('main > footer').boundingBox();
+  check(messages.y + messages.height <= composer.y, 'Composer overlaps the scrollable conversation');
+  await page.screenshot({ path: 'output/playwright/research-review-mobile.png', animations: 'disabled' });
+  await panel.locator(':scope > summary').click();
+  const input = await page.getByRole('textbox', { name: '输入任务，按 Enter 发送...' }).boundingBox();
+  check(input && input.y >= 0 && input.y + input.height <= 844, 'Mobile composer is occluded');
+  return { findings: count, rejected, sourceLinks: links.length, reloadUnchanged: true, mobileWidth: bounds.width };
+}

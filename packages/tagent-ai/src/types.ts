@@ -35,6 +35,11 @@ export interface LLMCallParams {
   tools?: ToolDefinition[];
   temperature?: number;
   maxTokens?: number;
+  signal?: AbortSignal;
+  /** Internal accounting/checkpoint hint; not sent to the model API. */
+  purpose?: 'response' | 'verification';
+  /** Overrides supported DeepSeek thinking mode; tool loops still keep thinking disabled. */
+  reasoning?: 'disabled' | 'low';
 }
 
 export interface LLMResponse {
@@ -85,6 +90,10 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'gpt-4o': { inputPer1M: 2.5, outputPer1M: 10 },
   'gpt-4o-mini': { inputPer1M: 0.15, outputPer1M: 0.6 },
   // DeepSeek (Anthropic-compatible API)
+  // Peak/cache-miss upper estimates, checked 2026-09-15; preserve legacy rates for old receipts.
+  'deepseek-flash': { inputPer1M: 0.30, outputPer1M: 1.20 },
+  'deepseek-v4-flash': { inputPer1M: 0.30, outputPer1M: 1.20 },
+  'deepseek-v4-pro': { inputPer1M: 1.32, outputPer1M: 3.96 },
   'deepseek-chat': { inputPer1M: 0.27, outputPer1M: 1.10 },
   'deepseek-reasoner': { inputPer1M: 0.55, outputPer1M: 2.19 },
 };

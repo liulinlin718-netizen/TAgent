@@ -31,8 +31,8 @@ export class AgentRegistry {
       await this.ensureDir();
       const data = await fs.readFile(this.configFile, 'utf-8');
       this.configCache = JSON.parse(data) as Record<string, AgentOverride>;
-    } catch (e: any) {
-      if (e.code === 'ENOENT') {
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') {
         this.configCache = {};
       } else {
         throw e;

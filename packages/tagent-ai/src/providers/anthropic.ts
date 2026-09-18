@@ -7,22 +7,36 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { LLMProvider, LLMCallParams, LLMResponse, LLMStreamEvent, ToolCall } from '../types.js';
 import { MODEL_PRICING } from '../types.js';
+import { ProviderRequestError, providerRequest, type ProviderOptions } from '../provider-request.js';
 
 export class AnthropicProvider implements LLMProvider {
   name: string;
   private client: Anthropic;
+  private timeout: number;
 
-  constructor(options?: { apiKey?: string; baseURL?: string; name?: string }) {
+  constructor(options?: ProviderOptions) {
     this.name = options?.name || 'anthropic';
+    this.timeout = options?.timeout ?? 60000;
     this.client = new Anthropic({
       apiKey: options?.apiKey || process.env.ANTHROPIC_API_KEY,
       baseURL: options?.baseURL,
+      timeout: this.timeout,
+      maxRetries: options?.maxRetries ?? 0,
+      fetch: options?.fetch,
     });
   }
 
   async call(params: LLMCallParams): Promise<LLMResponse> {
+    const request = providerRequest(this.name, this.timeout, params.signal);
+    try { return await this.callResponse({ ...params, signal: request.signal }); }
+    catch (error) { return request.fail(error); }
+    finally { request.dispose(); }
+  }
+
+  private async callResponse(params: LLMCallParams): Promise<LLMResponse> {
     const { systemPrompt, messages } = this.formatMessages(params.messages);
 
+    params.signal?.throwIfAborted();
     const response = await this.client.messages.create({
       model: params.model,
       max_tokens: params.maxTokens || 4096,
@@ -34,8 +48,9 @@ export class AnthropicProvider implements LLMProvider {
         description: t.description,
         input_schema: t.parameters as Anthropic.Messages.Tool['input_schema'],
       })),
-    });
+    }, { signal: params.signal });
 
+    if (!Array.isArray(response?.content) || !response.usage) throw new ProviderRequestError(this.name, 'invalid_response');
     const content = response.content
       .filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text')
       .map(b => b.text)
@@ -68,8 +83,16 @@ export class AnthropicProvider implements LLMProvider {
   }
 
   async *stream(params: LLMCallParams): AsyncIterable<LLMStreamEvent> {
+    const request = providerRequest(this.name, this.timeout, params.signal);
+    try { yield* this.streamResponse({ ...params, signal: request.signal }); }
+    catch (error) { request.fail(error); }
+    finally { request.dispose(); }
+  }
+
+  private async *streamResponse(params: LLMCallParams): AsyncIterable<LLMStreamEvent> {
     const { systemPrompt, messages } = this.formatMessages(params.messages);
 
+    params.signal?.throwIfAborted();
     const stream = this.client.messages.stream({
       model: params.model,
       max_tokens: params.maxTokens || 4096,
@@ -81,7 +104,7 @@ export class AnthropicProvider implements LLMProvider {
         description: t.description,
         input_schema: t.parameters as Anthropic.Messages.Tool['input_schema'],
       })),
-    });
+    }, { signal: params.signal });
 
     let currentToolCall: Partial<ToolCall> | null = null;
 

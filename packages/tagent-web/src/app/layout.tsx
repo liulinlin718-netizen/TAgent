@@ -1,21 +1,7 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
 import "../styles/tokens.css";
 import "./globals.css";
-
-const inter = Inter({
-  variable: "--font-sans",
-  subsets: ["latin"],
-  display: "swap",
-  preload: true,
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-mono",
-  subsets: ["latin"],
-  display: "swap",
-  preload: true,
-});
+import AccessGate from '../components/AccessGate';
 
 export const metadata: Metadata = {
   title: "TAgent — AI 办公协作助手",
@@ -35,11 +21,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN" className={`${inter.variable} ${jetbrainsMono.variable}`}>
-      <head>
-        <link rel="preconnect" href="http://localhost:3001" />
-      </head>
-      <body>{children}</body>
+    <html lang="zh-CN" suppressHydrationWarning>
+      <body><AccessGate>{children}</AccessGate></body>
     </html>
   );
 }

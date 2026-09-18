@@ -14,24 +14,36 @@
  * 参考: Claude Code Loop, Codex CLI, OpenCode
  */
 
-import type { LLMProvider, LLMResponse, Message, ToolDefinition, ToolCall } from '@tagent/ai';
+import type { LLMProvider, LLMResponse, Message } from '@tagent/ai';
+import { randomUUID } from 'node:crypto';
+import type { SnapshotCapture } from './execution-snapshot.js';
 import { CostTracker } from '@tagent/ai';
-import { TraceWriter, type TraceSpan, type TraceEntry } from './trace.js';
+import { TraceWriter, type TraceSpan } from './trace.js';
 import { ToolRegistry } from './tools/registry.js';
 import { GovernanceEngine, type GovernanceContext } from './governance.js';
+import { finalAnswerTokenBudget, resolveFinalAnswer } from './final-answer.js';
+import { withRunSignal, terminationNotice, runTermination, type RunTermination } from './run-control.js';
+import { requestToolApproval, type ApprovalHandler } from './tool-approval.js';
+export type { ApprovalRequest } from './tool-approval.js';
 
 // ─── Types ───────────────────────────────────────────
 
 export interface AgentConfig {
+  snapshotScope?: { workspaceId: string; sessionId: string; runId: string; taskId?: string };
+  captureSnapshot?: SnapshotCapture;
+  governanceTemplate?: 'standard' | 'strict_cost' | 'quality_first';
   id: string;
   name: string;
   systemPrompt: string;
   provider: LLMProvider;
+  signal?: AbortSignal;
   model: string;
   tools: ToolRegistry;
   traceWriter: TraceWriter;
   costTracker: CostTracker;
   maxIterations?: number;
+  /** Stop scheduling new work after this budget; an in-flight tool completes before synthesis. */
+  maxDurationMs?: number;
   maxCostPerTask?: number; // USD — 治理资源协议
   /** 工具白名单（治理安全协议 §3.10）— 不在此列表中的工具将被拦截 */
   allowedTools?: string[];
@@ -40,6 +52,7 @@ export interface AgentConfig {
 }
 
 export interface AgentLoopResult {
+  termination?: RunTermination;
   success: boolean;
   output: string;
   iterations: number;
@@ -56,18 +69,8 @@ export interface LoopEventHandler {
   onTextDelta?: (text: string) => void;
   onGovernance?: (event: { policyType: string; severity: string; result: string; message: string; suggestion?: string; ruleName?: string }) => void;
   /** D1: 审批请求 — suggest/auto_edit 模式下工具执行前触发 */
-  onApprovalRequest?: (request: ApprovalRequest) => void;
+  onApprovalRequest?: ApprovalHandler;
   onComplete?: (result: AgentLoopResult) => void;
-}
-
-/** D1: 审批请求数据结构 */
-export interface ApprovalRequest {
-  requestId: string;
-  toolName: string;
-  toolArgs: Record<string, unknown>;
-  mode: 'suggest' | 'auto_edit';
-  /** resolve 为 true=批准, false=拒绝 */
-  resolve: (approved: boolean) => void;
 }
 
 // ─── Snapshot ────────────────────────────────────────
@@ -81,7 +84,7 @@ interface Snapshot {
 
 function createSnapshot(iteration: number, messages: Message[]): Snapshot {
   return {
-    id: `snap-${Date.now()}-${iteration}`,
+    id: `snap-${randomUUID()}`,
     iteration,
     messages: JSON.parse(JSON.stringify(messages)), // deep clone
     timestamp: new Date().toISOString(),
@@ -97,21 +100,24 @@ export async function runAgentLoop(
 ): Promise<AgentLoopResult> {
   const {
     id: agentId,
-    provider,
+    provider: originalProvider,
+    signal,
     model,
     tools,
     traceWriter,
     costTracker,
     maxIterations = 15,
+    maxDurationMs = 180000,
     maxCostPerTask = 1.0,
     allowedTools,
     approvalMode = 'full_auto',
   } = config;
+  const provider = withRunSignal(originalProvider, signal);
 
   // 治理引擎实例（plan §3.4 步骤④ Hook）
-  const governance = new GovernanceEngine('standard');
+  const governance = new GovernanceEngine(config.governanceTemplate || 'standard');
 
-  const sessionId = `sess-${Date.now()}`;
+  const sessionId = config.snapshotScope?.sessionId || `sess-${randomUUID()}`;
   const traceId = `tr-${Date.now()}`;
 
   // Initialize conversation with system prompt
@@ -120,16 +126,36 @@ export async function runAgentLoop(
     { role: 'user', content: userMessage },
   ];
 
-  const toolDefs = tools.getDefinitions();
+  const toolDefs = tools.getDefinitions().filter(tool => !allowedTools || allowedTools.includes(tool.name));
   let iteration = 0;
   let lastSnapshot: Snapshot | null = null;
+  const startedAt = Date.now();
+  if (!Number.isFinite(maxDurationMs) || maxDurationMs <= 0) throw new Error('maxDurationMs must be positive');
+  const outOfTime = () => Date.now() - startedAt >= maxDurationMs;
+  const maxOutputTokens = finalAnswerTokenBudget(userMessage);
+  let returnedDraft = '';
+  const finish = (result: AgentLoopResult): AgentLoopResult => {
+    if (signal?.aborted) result = { ...result, success: false, termination: runTermination(signal),
+      output: buildPartialOutput(messages, terminationNotice(signal))
+        + (returnedDraft ? `\n\n## 已返回的未核验草稿\n\n${returnedDraft}` : '') };
+    events?.onComplete?.(result);
+    return result;
+  };
 
-  while (iteration < maxIterations) {
+  while (iteration < maxIterations && !outOfTime() && !signal?.aborted) {
     iteration++;
     events?.onIteration?.(iteration);
 
     // ⓪ SNAPSHOT — 保存当前状态以便回滚
     lastSnapshot = createSnapshot(iteration, messages);
+    if (config.captureSnapshot && config.snapshotScope) {
+      try {
+        await config.captureSnapshot({ ...lastSnapshot, ...config.snapshotScope, agentId });
+      } catch {
+        events?.onGovernance?.({ policyType: 'resource', severity: 'info', result: 'warning',
+          ruleName: 'snapshot_storage', message: '本轮快照未保存，最终报告仍会继续；不能从这个时刻创建分支。' });
+      }
+    }
     writeTrace(traceWriter, traceId, agentId, sessionId, lastSnapshot.id, {
       type: 'snapshot',
       timestamp: new Date().toISOString(),
@@ -145,6 +171,7 @@ export async function runAgentLoop(
         model,
         messages,
         tools: toolDefs.length > 0 ? toolDefs : undefined,
+        maxTokens: maxOutputTokens,
       });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -153,20 +180,21 @@ export async function runAgentLoop(
         timestamp: new Date().toISOString(),
         summary: `LLM call failed: ${msg}`,
       });
-      return {
+      return finish({
         success: false,
-        output: `Agent 错误: ${msg}`,
+        output: buildPartialOutput(messages, `模型请求失败：${msg}`),
         iterations: iteration,
         totalCost: costTracker.totalCost,
         totalTokens: costTracker.totalTokens,
         traceFile: traceWriter.getPath(),
-      };
+      });
     }
 
     const durationMs = Date.now() - startTime;
 
     // Record cost
     costTracker.record(model, response.usage, { agentId, traceId });
+    if (response.stopReason !== 'tool_use') returnedDraft = response.content;
 
     writeTrace(traceWriter, traceId, agentId, sessionId, lastSnapshot.id, {
       type: 'planning',
@@ -215,14 +243,14 @@ export async function runAgentLoop(
         });
         events?.onGovernance?.(blocker.event);
 
-        return {
+        return finish({
           success: false,
-          output: `${response.content}\n\n⚠️ 治理拦截: ${blocker.event.message}`,
+          output: buildPartialOutput(messages, `治理拦截：${blocker.event.message}`),
           iterations: iteration,
           totalCost: costTracker.totalCost,
           totalTokens: costTracker.totalTokens,
           traceFile: traceWriter.getPath(),
-        };
+        });
       }
     }
 
@@ -237,7 +265,33 @@ export async function runAgentLoop(
 
       // Execute each tool call
       for (const toolCall of response.toolCalls) {
-        const toolArgs = JSON.parse(toolCall.arguments) as Record<string, unknown>;
+        if (outOfTime() || signal?.aborted) {
+          const skipped = signal?.aborted ? '任务已停止，未执行此工具。'
+            : '本轮执行时间预算已用完，未执行此工具。请使用已获取的证据生成最终报告，标明未验证部分。';
+          // Complete every requested tool message even when the remaining calls are skipped.
+          messages.push({ role: 'tool', toolCallId: toolCall.id, content: skipped });
+          events?.onToolResult?.(toolCall.name, skipped);
+          continue;
+        }
+        let toolArgs: Record<string, unknown>;
+        try {
+          toolArgs = JSON.parse(toolCall.arguments) as Record<string, unknown>;
+        } catch (error) {
+          const parseMsg = `工具参数解析失败: ${error instanceof Error ? error.message : String(error)}。原始参数: ${toolCall.arguments}`;
+          writeTrace(traceWriter, traceId, agentId, sessionId, lastSnapshot.id, {
+            type: 'error',
+            timestamp: new Date().toISOString(),
+            tool: toolCall.name,
+            summary: parseMsg,
+          });
+          events?.onToolResult?.(toolCall.name, parseMsg);
+          messages.push({
+            role: 'tool',
+            content: parseMsg,
+            toolCallId: toolCall.id,
+          });
+          continue;
+        }
 
         // ④ 工具级治理检查：白名单 (plan §3.10 安全协议)
         if (allowedTools && !allowedTools.includes(toolCall.name)) {
@@ -262,13 +316,16 @@ export async function runAgentLoop(
 
         // D1: 三级审批模式检查 (plan §2.13)
         if (approvalMode !== 'full_auto') {
-          const approved = await requestApproval(toolCall.name, toolArgs, approvalMode, events);
+          const approved = await requestToolApproval(toolCall.name, toolArgs, approvalMode, events?.onApprovalRequest, signal,
+            tools.get(toolCall.name)?.approval === 'local_read_only');
           if (!approved) {
-            const rejectMsg = `用户拒绝了工具 "${toolCall.name}" 的执行。`;
+            const rejectMsg = `工具 "${toolCall.name}" 未取得执行确认，已停止执行。`;
             writeTrace(traceWriter, traceId, agentId, sessionId, lastSnapshot.id, {
               type: 'governance_check', timestamp: new Date().toISOString(),
               policy: 'approval', result: 'blocked', summary: rejectMsg, tool: toolCall.name,
             });
+            events?.onGovernance?.({ policyType: 'security', severity: 'hard', result: 'blocked', ruleName: 'approval', message: rejectMsg });
+            events?.onToolResult?.(toolCall.name, rejectMsg);
             messages.push({ role: 'tool', content: rejectMsg, toolCallId: toolCall.id });
             continue;
           }
@@ -286,7 +343,7 @@ export async function runAgentLoop(
         const toolStart = Date.now();
 
         try {
-          toolResult = await tools.execute(toolCall.name, toolArgs);
+          toolResult = await tools.execute(toolCall.name, toolArgs, { signal });
         } catch (error) {
           toolResult = `工具执行失败: ${error instanceof Error ? error.message : String(error)}`;
         }
@@ -317,44 +374,156 @@ export async function runAgentLoop(
     }
 
     // ⑦ OUTPUT — LLM 决定直接回复，循环结束
+    const final = await resolveFinalAnswer({ response, messages, provider, model, costTracker,
+      maxTokens: maxOutputTokens, maxCost: maxCostPerTask, agentId, traceId,
+      onRewrite: () => writeTrace(traceWriter, traceId, agentId, sessionId, lastSnapshot?.id || null, {
+        type: 'planning', timestamp: new Date().toISOString(), summary: 'Output limit reached; one bounded tool-free rewrite.',
+      }),
+    });
     writeTrace(traceWriter, traceId, agentId, sessionId, lastSnapshot?.id || null, {
-      type: 'output',
-      timestamp: new Date().toISOString(),
-      summary: response.content.slice(0, 200),
-      tokens: response.usage.inputTokens + response.usage.outputTokens,
+      type: 'output', timestamp: new Date().toISOString(),
+      summary: `${final.success ? 'Complete' : 'Incomplete'}: ${final.output.slice(0, 200)}`,
     });
-
-    events?.onComplete?.({
-      success: true,
-      output: response.content,
+    return finish({
+      success: final.success,
+      output: final.success ? final.output : `${final.output}\n\n> 模型未返回完整结果：${final.reason}。当前内容尚未完成质量验收。`,
       iterations: iteration,
       totalCost: costTracker.totalCost,
       totalTokens: costTracker.totalTokens,
       traceFile: traceWriter.getPath(),
     });
-
-    return {
-      success: true,
-      output: response.content,
-      iterations: iteration,
-      totalCost: costTracker.totalCost,
-      totalTokens: costTracker.totalTokens,
-      traceFile: traceWriter.getPath(),
-    };
   }
 
-  // Max iterations reached
-  return {
-    success: false,
-    output: '达到最大迭代次数限制。',
+  if (signal?.aborted) return finish({ success: false, output: '', iterations: iteration,
+    totalCost: costTracker.totalCost, totalTokens: costTracker.totalTokens, traceFile: traceWriter.getPath() });
+
+  const limitReason = outOfTime() ? 'time budget' : 'iteration limit';
+  if (outOfTime()) {
+    const message = '本轮执行时间预算已用完，停止追加工具调用并整理已有结果。';
+    events?.onGovernance?.({ policyType: 'resource', severity: 'soft', result: 'warning', ruleName: 'execution_time_budget', message });
+    writeTrace(traceWriter, traceId, agentId, sessionId, lastSnapshot?.id || null, {
+      type: 'governance_check', timestamp: new Date().toISOString(), policy: 'execution_time_budget', result: 'warning', summary: message,
+    });
+  }
+  const synthesis = await synthesizeFinalWhenLimited({
+    provider,
+    model,
+    messages,
+    costTracker,
+    agentId,
+    traceId,
+    traceWriter,
+    sessionId,
+    snapshotId: lastSnapshot?.id || null,
+    limitReason,
+    maxTokens: maxOutputTokens,
+    maxCost: maxCostPerTask,
+  });
+
+  return finish({
+    success: synthesis.success,
+    output: synthesis.output,
     iterations: iteration,
     totalCost: costTracker.totalCost,
     totalTokens: costTracker.totalTokens,
     traceFile: traceWriter.getPath(),
-  };
+  });
+
 }
 
 // ─── Helper ──────────────────────────────────────────
+
+async function synthesizeFinalWhenLimited({
+  provider,
+  model,
+  messages,
+  costTracker,
+  agentId,
+  traceId,
+  traceWriter,
+  sessionId,
+  snapshotId,
+  limitReason,
+  maxTokens,
+  maxCost,
+}: {
+  provider: LLMProvider;
+  model: string;
+  messages: Message[];
+  costTracker: CostTracker;
+  agentId: string;
+  traceId: string;
+  traceWriter: TraceWriter;
+  sessionId: string;
+  snapshotId: string | null;
+  limitReason: string;
+  maxTokens: number;
+  maxCost: number;
+}): Promise<{ success: boolean; output: string }> {
+  try {
+    const response = await provider.call({
+      model,
+      messages: [
+        ...messages,
+        {
+          role: 'user',
+          content: [
+            `You have reached the ${limitReason} for this run.`,
+            'Stop calling tools and produce the final answer now, using only the evidence already gathered in this conversation.',
+            'Requirements:',
+            '1. Provide a complete final answer, not a process update.',
+            '2. Clearly separate verified source-backed content from uncertain content.',
+            '3. If evidence is insufficient, say so and give the best next steps.',
+            '4. Do not say you will search again.',
+          ].join('\n'),
+        },
+      ],
+      maxTokens,
+      temperature: 0.3,
+    });
+
+    costTracker.record(model, response.usage, { agentId, traceId });
+    const final = await resolveFinalAnswer({ response, messages, provider, model, costTracker, maxTokens, maxCost, agentId, traceId,
+      onRewrite: () => writeTrace(traceWriter, traceId, agentId, sessionId, snapshotId, {
+        type: 'planning', timestamp: new Date().toISOString(), summary: 'Final report truncated; one bounded tool-free rewrite.',
+      }),
+    });
+    if (!final.output.trim()) throw new Error(final.reason);
+    writeTrace(traceWriter, traceId, agentId, sessionId, snapshotId, {
+      type: 'output',
+      timestamp: new Date().toISOString(),
+      summary: `Final synthesis after ${limitReason} (${final.success ? 'complete' : 'incomplete'}): ${final.output.slice(0, 160)}`,
+      tokens: response.usage.inputTokens + response.usage.outputTokens,
+      cost: response.usage.cost,
+    });
+
+    return { success: final.success, output: final.success ? final.output
+      : `# 任务未完整完成\n\n> ${final.reason}。以下保留未完成的综合稿，不能作为已核验的完整交付物。\n\n${final.output}` };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const fallback = buildPartialOutput(messages, `已达到本轮执行限制（${limitReason}），最终综合生成失败：${message}`);
+
+    writeTrace(traceWriter, traceId, agentId, sessionId, snapshotId, {
+      type: 'error',
+      timestamp: new Date().toISOString(),
+      summary: `Final synthesis failed: ${message}`,
+    });
+
+    return { success: false, output: fallback };
+  }
+}
+
+function buildPartialOutput(messages: Message[], reason: string): string {
+  const materials = messages.filter(message => message.role === 'tool').slice(-4);
+  return [
+    '# 任务未完整完成',
+    '',
+    `> ${reason.replace(/[\r\n]+/g, ' ')}`,
+    '',
+    materials.length ? '## 已保留的工具材料\n\n以下是原始返回内容，尚未完成综合与质量验证。' : '尚未取得可用的工具材料。',
+    ...materials.map((message, index) => `### 材料 ${index + 1}\n\n${message.content.slice(0, 3000)}${message.content.length > 3000 ? '\n\n[材料过长，此处仅保留节选]' : ''}`),
+  ].join('\n\n');
+}
 
 function writeTrace(
   writer: TraceWriter,
@@ -365,46 +534,4 @@ function writeTrace(
   span: TraceSpan,
 ): void {
   writer.write({ traceId, agentId, sessionId, parentTraceId: null, snapshotId, span });
-}
-
-/**
- * D1: 三级审批请求
- *
- * suggest:    暂停等待用户确认（无超时）
- * auto_edit:  暂停等待用户确认，3s 内无反对则自动批准
- */
-function requestApproval(
-  toolName: string,
-  toolArgs: Record<string, unknown>,
-  mode: 'suggest' | 'auto_edit',
-  events?: LoopEventHandler,
-): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
-    const requestId = `approval-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-
-    // auto_edit: 3s 后自动批准
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    if (mode === 'auto_edit') {
-      timer = setTimeout(() => resolve(true), 3000);
-    }
-
-    const request: ApprovalRequest = {
-      requestId,
-      toolName,
-      toolArgs,
-      mode,
-      resolve: (approved: boolean) => {
-        if (timer) clearTimeout(timer);
-        resolve(approved);
-      },
-    };
-
-    if (events?.onApprovalRequest) {
-      events.onApprovalRequest(request);
-    } else {
-      // 没有审批处理器时，默认批准
-      if (timer) clearTimeout(timer);
-      resolve(true);
-    }
-  });
 }

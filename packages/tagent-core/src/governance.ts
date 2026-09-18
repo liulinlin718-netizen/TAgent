@@ -21,6 +21,8 @@ export interface GovernanceRule {
 }
 
 export interface GovernanceContext {
+  deliveryStatus?: 'passed' | 'needs_revision' | 'unverified';
+  independentSources?: number;
   agentId: string;
   currentCost: number;
   maxCost: number;
@@ -104,9 +106,6 @@ const toolWhitelistRule: GovernanceRule = {
     if (!ctx.toolName || !ctx.allowedTools) {
       return { passed: true, event: { policyType: 'security', severity: 'info', result: 'passed', message: '无工具调用' } };
     }
-    if (ctx.toolName === 'spawn_agent') {
-      return { passed: true, event: { policyType: 'security', severity: 'info', result: 'passed', message: 'spawn_agent 为内建能力' } };
-    }
     if (!ctx.allowedTools.includes(ctx.toolName)) {
       return {
         passed: false,
@@ -150,18 +149,17 @@ const qualityCheckRule: GovernanceRule = {
   name: 'output_quality',
   severity: 'soft',
   check(ctx) {
-    // D9: 迭代次数过低时发出警告（可能草率完成）
-    if (ctx.currentIterations < 2 && ctx.currentCost > 0) {
+    if (ctx.deliveryStatus !== 'passed') {
       return {
         passed: true,
         event: {
           policyType: 'quality', severity: 'soft', result: 'warning',
-          message: '迭代次数较少，建议更深入分析以确保输出质量',
-          suggestion: '增加搜索范围或交叉验证信息源',
+          message: ctx.deliveryStatus === 'needs_revision' ? '实际交付核对发现问题，不能标记为已核验。' : '尚无完整交付核对结果，不以迭代次数或费用推断内容质量。',
+          suggestion: '保留原稿与核对缺口，先查看具体失败项；不自动追加搜索或模型调用。',
         },
       };
     }
-    return { passed: true, event: { policyType: 'quality', severity: 'info', result: 'passed', message: '质量检查通过' } };
+    return { passed: true, event: { policyType: 'quality', severity: 'info', result: 'passed', message: '实际交付核对记录通过；模型辅助核对不等于独立事实核查。' } };
   },
 };
 
@@ -171,18 +169,17 @@ const sourceDiversityRule: GovernanceRule = {
   name: 'source_diversity',
   severity: 'info',
   check(ctx) {
-    // 如果 Agent 使用了工具但迭代次数 < 3，提示信息源可能不够多样
-    if (ctx.toolName === 'web_search' && ctx.currentIterations < 3) {
+    if (ctx.independentSources === undefined || ctx.independentSources < 2) {
       return {
         passed: true,
         event: {
           policyType: 'quality', severity: 'info', result: 'warning',
-          message: '搜索次数较少，建议使用多个关键词以提高信息源多样性',
-          suggestion: '尝试不同角度的搜索查询，交叉验证信息',
+          message: ctx.independentSources === undefined ? '尚无来源独立性核对记录。' : `当前识别到${ctx.independentSources}个独立发布方，交叉支持不足。`,
+          suggestion: '查看来源原文与转载关系；搜索次数不能代替独立来源数量。',
         },
       };
     }
-    return { passed: true, event: { policyType: 'quality', severity: 'info', result: 'passed', message: '信息源多样性检查通过' } };
+    return { passed: true, event: { policyType: 'quality', severity: 'info', result: 'passed', message: '已识别多个独立发布方；仍需逐条核对内容是否相互支持。' } };
   },
 };
 
@@ -203,7 +200,7 @@ const alignmentCheckRule: GovernanceRule = {
         },
       };
     }
-    return { passed: true, event: { policyType: 'alignment', severity: 'info', result: 'passed', message: '方向检查通过' } };
+    return { passed: true, event: { policyType: 'alignment', severity: 'info', result: 'passed', message: '尚未达到路径复核提醒阈值；不代表语义方向已验证。' } };
   },
 };
 
@@ -259,7 +256,7 @@ const TEMPLATES: Record<GovernanceTemplate, GovernanceRule[]> = {
 export class GovernanceEngine {
   private rules: GovernanceRule[];
 
-  constructor(template: GovernanceTemplate = 'standard') {
+  constructor(private readonly template: GovernanceTemplate = 'standard') {
     this.rules = [...TEMPLATES[template]];
   }
 
@@ -268,18 +265,38 @@ export class GovernanceEngine {
     results: GovernanceResult[];
     blockers: GovernanceResult[];
   } {
-    const results = this.rules.map(rule => rule.check(ctx));
+    const results = this.rules.map(rule => this.evaluateRule(rule, ctx));
     const blockers = results.filter(r => !r.passed);
     return { allPassed: blockers.length === 0, results, blockers };
   }
 
   /** 获取所有检查结果（包括 passed 的），用于决策链回溯 */
   evaluateAll(ctx: GovernanceContext): GovernanceResult[] {
-    return this.rules.map(rule => rule.check(ctx));
+    return this.rules.map(rule => this.evaluateRule(rule, ctx));
+  }
+
+  private evaluateRule(rule: GovernanceRule, ctx: GovernanceContext): GovernanceResult {
+    const result = rule.check(ctx);
+    const inputs: Record<string, string | number | boolean> = {};
+    const keys: (keyof GovernanceContext)[] = rule.name === 'budget_cap' ? ['currentCost', 'maxCost']
+      : rule.name === 'iteration_limit' || rule.name === 'intent_alignment' ? ['currentIterations', 'maxIterations']
+      : rule.name === 'tool_whitelist' ? ['toolName', 'approvalMode']
+      : rule.name === 'fission_depth' ? ['fissionDepth', 'maxFissionDepth']
+      : rule.name === 'output_quality' ? ['deliveryStatus']
+      : rule.name === 'source_diversity' ? ['independentSources'] : ['activeAgentCount', 'maxAgents'];
+    for (const key of keys) {
+      const value = ctx[key];
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') inputs[key] = value;
+    }
+    if (rule.name === 'tool_whitelist' && ctx.toolName && ctx.allowedTools) inputs.allowed = ctx.allowedTools.includes(ctx.toolName);
+    return { ...result, event: { ...result.event, ruleName: rule.name, decision: {
+      policyVersion: 1, template: this.template, ruleId: rule.name,
+      effect: !result.passed ? 'stop' : result.event.result === 'warning' ? (result.event.severity === 'soft' ? 'review' : 'inform') : 'allow',
+      reason: result.event.message, alternatives: result.event.suggestion ? [result.event.suggestion] : [], inputs,
+    } } };
   }
 
   addRule(rule: GovernanceRule): void {
     this.rules.push(rule);
   }
 }
-

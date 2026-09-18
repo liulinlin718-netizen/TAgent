@@ -1,0 +1,37 @@
+.overlay { position: fixed; inset: 0; background: rgb(0 0 0 / 35%); z-index: 100; }
+.dialog { position: fixed; inset: 4dvh max(16px, calc((100vw - 880px) / 2)); z-index: 101; display: flex; flex-direction: column; background: var(--color-bg-base); color: var(--color-text-primary); border: 1px solid var(--border-light); border-radius: 8px; min-width: 0; }
+.header { display: flex; align-items: flex-start; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--border-light); }
+.header > div { flex: 1; min-width: 0; }
+.title { font-size: 20px; line-height: 1.4; margin: 0; overflow-wrap: anywhere; }
+.description { font-size: 13px; line-height: 1.6; color: var(--color-text-secondary); margin: 8px 0 0; }
+.body { padding: 0 24px 24px; overflow-y: auto; min-height: 0; }
+.section { padding: 22px 0; border-bottom: 1px solid var(--border-light); }
+.section:last-child { border-bottom: 0; }
+.section h3 { display: flex; align-items: center; gap: 8px; font-size: 16px; margin: 0 0 14px; }
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.row > span, .row select { flex: 1; min-width: 160px; overflow-wrap: anywhere; }
+.section select { width: 100%; min-height: 40px; padding: 8px; font: inherit; font-size: 13px; border: 1px solid var(--border-light); border-radius: 4px; color: inherit; background: var(--color-bg-base); text-overflow: ellipsis; }
+.command, .icon { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--border-light); border-radius: 4px; color: inherit; background: var(--color-bg-surface); cursor: pointer; font: inherit; font-size: 13px; }
+.command { padding: 9px 12px; min-height: 40px; }
+.icon { width: 32px; height: 32px; flex-shrink: 0; }
+.command:disabled, .icon:disabled { opacity: .5; cursor: not-allowed; }
+.results { display: grid; gap: 0; margin-top: 16px; }
+.results details { border-top: 1px solid var(--border-light); padding: 12px 0; font-size: 13px; line-height: 1.65; }
+.results summary { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.results summary span { flex: 1; min-width: 0; }
+.results summary svg { flex-shrink: 0; color: var(--color-text-secondary); }
+.results p, .results li { overflow-wrap: anywhere; }
+.results ul { margin: 10px 0; padding-left: 24px; }
+.meta { font-size: 12px; color: var(--color-text-secondary); overflow-wrap: anywhere; line-height: 1.6; }
+.error { display: flex; align-items: center; gap: 12px; border-left: 3px solid #dc2626; padding: 12px; margin-top: 16px; font-size: 13px; overflow-wrap: anywhere; }
+.consent { border-left: 3px solid #0d9488; padding: 4px 0 4px 16px; margin-top: 20px; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.consent h4 { margin: 8px 0; font-size: 15px; }
+.consent ol { padding-left: 24px; }
+.confirm { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; cursor: pointer; }
+.confirm input { margin: 5px 0 0; flex-shrink: 0; }
+.history { margin-top: 20px; font-size: 13px; }
+.history label { display: block; margin-bottom: 8px; }
+.progress { width: 100%; height: 8px; margin-top: 12px; accent-color: #0d9488; }
+.output { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px 0; font: inherit; }
+.trace { max-height: 280px; overflow: auto; padding-left: 24px; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .dialog { inset: 8px; } .header { padding: 16px; } .body { padding: 0 16px 16px; } .title { font-size: 17px; } .row { align-items: stretch; } .row select { flex-basis: 100%; min-width: 0; } }

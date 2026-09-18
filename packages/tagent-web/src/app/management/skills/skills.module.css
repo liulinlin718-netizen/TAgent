@@ -212,3 +212,584 @@
   color: var(--color-text-secondary);
   font-size: var(--text-lg);
 }
+
+.toolbar,
+.aiDraftBox,
+.importBox,
+.buttonRow,
+.cardActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toolbar {
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.header .primaryButton {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.importBox,
+.aiDraftBox {
+  flex: 1;
+  min-width: min(420px, 100%);
+}
+
+.importBox input,
+.aiDraftBox input {
+  min-width: 0;
+  flex: 1;
+}
+
+.importBox button,
+.aiDraftBox button {
+  flex-shrink: 0;
+}
+
+.importBox input,
+.aiDraftBox input,
+.formGrid input,
+.formGrid textarea,
+.formGrid select,
+.documentMetaGrid input,
+.documentMetaGrid select,
+.sectionTextarea {
+  width: 100%;
+  border: 1px solid var(--panel-glass-border);
+  border-radius: 8px;
+  background: var(--panel-glass);
+  color: var(--color-text-primary);
+  font: inherit;
+  padding: 12px 14px;
+}
+
+.formGrid select {
+  min-height: 45px;
+}
+
+.aiDraftBox {
+  border: 1px solid var(--panel-glass-border);
+  border-radius: 8px;
+  background: var(--panel-glass);
+  padding: 12px;
+}
+
+.secondaryButton,
+.dangerButton,
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 8px;
+  border: 1px solid var(--panel-glass-border);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  padding: 9px 12px;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.secondaryButton:hover,
+.iconButton:hover {
+  border-color: var(--glow-border);
+  color: var(--color-text-primary);
+}
+
+.dangerButton {
+  color: var(--color-error);
+  border-color: rgba(239, 68, 68, 0.22);
+}
+
+.dangerButton:hover {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: var(--color-error);
+}
+
+.editorPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  border: 1px solid var(--panel-glass-border);
+  border-radius: 8px;
+  background: var(--panel-glass);
+  padding: 22px;
+}
+
+.editorHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.editorHeader h2 {
+  margin: 0 0 6px;
+  color: var(--color-text-primary);
+  font-size: 1.15rem;
+}
+
+.editorHeader p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.formGrid label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.formGrid textarea {
+  min-height: 260px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.fullWidth {
+  grid-column: 1 / -1;
+}
+
+.discoveryPanel,
+.editorSection,
+.testResult {
+  border: 1px solid var(--panel-glass-border);
+  border-radius: 8px;
+  background: var(--panel-glass);
+}
+
+.discoveryPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+}
+
+.discoveryHeader {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: 18px;
+  align-items: end;
+}
+
+.discoveryHeader > div,
+.discoveryHeader .importBox {
+  min-width: 0;
+}
+
+.discoveryHeader h2,
+.editorSection h3 {
+  margin: 0 0 6px;
+  color: var(--color-text-primary);
+  font-size: 1rem;
+}
+
+.discoveryHeader p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.discoveryResults {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.providerStatusBar {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.providerPill {
+  border: 1px solid var(--panel-glass-border);
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-surface);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.2;
+}
+
+.provider_ok {
+  color: #047857;
+  border-color: rgba(16, 185, 129, 0.28);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.provider_failed {
+  color: var(--color-error);
+  border-color: rgba(239, 68, 68, 0.24);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.provider_disabled,
+.provider_unknown {
+  color: var(--color-text-tertiary);
+  border-color: rgba(148, 163, 184, 0.24);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.candidateCard {
+  min-width: 0;
+  border: 1px solid var(--panel-glass-border);
+  border-radius: 8px;
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  padding: 13px;
+  text-align: left;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.candidateCard:hover {
+  border-color: var(--glow-border);
+  transform: translateY(-2px);
+}
+
+.candidateCard strong {
+  display: block;
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.candidateCard span {
+  display: block;
+  margin-top: 5px;
+  color: var(--color-accent-primary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.candidateCard p,
+.discoveryNote,
+.discoveryError {
+  margin: 8px 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.candidateActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.candidateActions .secondaryButton {
+  padding: 7px 10px;
+  font-size: var(--text-xs);
+}
+
+.discoveryNote {
+  grid-column: 1 / -1;
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.06);
+  padding: 12px;
+}
+
+.discoveryError {
+  grid-column: 1 / -1;
+  border: 1px solid rgba(239, 68, 68, 0.24);
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.06);
+  padding: 12px;
+}
+
+.editorSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.sectionHeader h3 {
+  margin: 0 0 6px;
+}
+
+.sectionHeader p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.documentList {
+  display: grid;
+  gap: 12px;
+}
+
+.documentCard {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--panel-glass-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-bg-surface) 72%, transparent);
+  padding: 14px;
+}
+
+.documentMetaGrid {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.85fr) minmax(220px, 1.6fr) auto auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.documentMetaGrid label,
+.checkboxLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.checkboxLabel {
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  flex-direction: row;
+  white-space: nowrap;
+}
+
+.checkboxLabel input {
+  width: auto;
+}
+
+.toolChoiceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.toolChoice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid var(--panel-glass-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-bg-surface) 70%, transparent);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: 12px;
+}
+
+.toolChoice input {
+  width: auto;
+  margin-top: 2px;
+}
+
+.toolChoice strong,
+.toolChoice small {
+  display: block;
+}
+
+.toolChoice strong {
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+}
+
+.toolChoice small {
+  margin-top: 3px;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.simpleField {
+  display: grid;
+  gap: 8px;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.packageGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.sectionTextarea {
+  min-height: 140px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.packageMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.packageMeta span {
+  border-radius: var(--radius-pill);
+  background: rgba(124, 107, 196, 0.09);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  padding: 4px 9px;
+}
+
+.testResult {
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  padding: 12px 14px;
+}
+
+.riskBox {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--panel-glass-border);
+  padding: 14px;
+  color: var(--color-text-secondary);
+}
+
+.riskBox > div { min-width: 0; }
+.riskDetails { margin-top: 8px; }
+.riskDetails summary { cursor: pointer; font-size: 14px; }
+.riskDetails pre { max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; }
+
+.riskBox strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--color-text-primary);
+}
+
+.riskBox p,
+.riskBox small {
+  display: block;
+  margin: 4px 0 0;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.risk_low {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.06);
+}
+
+.risk_medium {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.07);
+}
+
+.risk_high {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.07);
+}
+
+.previewPanel {
+  border: 1px solid var(--panel-glass-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.importChoices,
+.resourceFiles {
+  min-width: 0;
+  padding: 16px 0;
+  border-block: 1px solid var(--panel-glass-border);
+  overflow-wrap: anywhere;
+}
+
+.importChoices h2 { font-size: 18px; margin: 0 0 12px; }
+.importChoices ul,
+.resourceFiles ul { list-style: none; padding: 0; max-height: 360px; overflow: auto; }
+.importChoices li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; }
+.importChoices li a { min-width: 0; }
+.importChoices li button { flex-shrink: 0; }
+.resourceFiles summary { cursor: pointer; padding: 6px 0; }
+.resourceFiles pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; padding: 12px; background: var(--color-bg-secondary); }
+
+.previewPanel summary {
+  cursor: pointer;
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.previewPanel pre {
+  max-height: 280px;
+  margin-top: 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+}
+
+.buttonRow {
+  justify-content: flex-end;
+}
+
+.cardActions {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--panel-glass-border);
+}
+
+@media (max-width: 760px) {
+  .header,
+  .toolbar,
+  .importBox,
+  .aiDraftBox {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .discoveryHeader {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .sectionHeader {
+    flex-direction: column;
+  }
+
+  .documentMetaGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .checkboxLabel {
+    justify-content: flex-start;
+  }
+}

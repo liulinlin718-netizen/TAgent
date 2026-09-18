@@ -4,6 +4,7 @@
 .layout {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
   background: var(--color-bg-base);
   color: var(--color-text-primary);
@@ -13,6 +14,7 @@
 /* Glassmorphism 侧栏 ← mycalmsite */
 .sidebar {
   width: 250px;
+  flex-shrink: 0;
   background: var(--panel-glass);
   backdrop-filter: var(--panel-glass-blur);
   -webkit-backdrop-filter: var(--panel-glass-blur);
@@ -101,6 +103,8 @@
 /* 主内容区 + 微弱网格纹理 */
 .mainContent {
   flex-grow: 1;
+  min-width: 0;
+  min-height: 0;
   padding: 32px 48px;
   overflow-y: auto;
   position: relative;
@@ -114,4 +118,14 @@
     linear-gradient(rgba(99, 102, 241, 0.012) 1px, transparent 1px),
     linear-gradient(90deg, rgba(99, 102, 241, 0.012) 1px, transparent 1px);
   background-size: 100% 100%, 100% 100%, 50px 50px, 50px 50px;
+}
+
+@media (max-width: 760px) {
+  .layout { flex-direction: column; }
+  .sidebar { width: 100%; padding: 12px 0 0; border-right: 0; border-bottom: 1px solid var(--panel-glass-border); }
+  .sidebarHeader { padding: 0 16px 12px; }
+  .nav { flex-direction: row; overflow-x: auto; padding: 10px 12px; gap: 4px; }
+  .navItem { flex-shrink: 0; padding: 9px 12px; gap: 6px; }
+  .sidebarFooter { padding: 8px 16px 12px; }
+  .mainContent { padding: 24px 16px; }
 }

@@ -17,6 +17,8 @@ import {
   Position,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { API_BASE as API, apiFetch as fetch } from '../lib/api-client';
+import type { AgentCard } from '@tagent/core';
 
 // ─── Types ───────────────────────────────────────────
 
@@ -264,10 +266,10 @@ function buildGraph(traces: TraceEvent[], isRunning: boolean): { nodes: Node[]; 
 // ─── Static Team View ────────────────────────────────
 
 function StaticTeamView() {
-  const [agents, setAgents] = useState<any[]>([]);
+  const [agents, setAgents] = useState<AgentCard[]>([]);
 
   useEffect(() => {
-    fetch('http://localhost:3001/api/agents')
+    fetch(`${API}/api/agents`)
       .then(r => r.json())
       .then(d => setAgents(d.agents || []));
   }, []);
@@ -289,7 +291,7 @@ function StaticTeamView() {
             <strong>Skills:</strong> {a.capabilities.skills?.length ? a.capabilities.skills.join(', ') : '无'}
           </div>
           <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-            <strong>Tools:</strong> {a.capabilities.allowedTools?.join(', ')}
+            <strong>Tools:</strong> {a.constraints.allowedTools?.join(', ')}
           </div>
           <div style={{ fontSize: '11px', color: '#94a3b8' }}>
             <strong>MCP:</strong> {a.capabilities.mcpServers?.length ? a.capabilities.mcpServers.join(', ') : '无'}

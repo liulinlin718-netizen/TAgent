@@ -32,7 +32,7 @@ export interface SanitizeOptions {
 const SENSITIVE_PATTERNS = [
   /(?:api[_-]?key|apikey|secret|token|password|credential|auth)["\s:=]+["']?[a-zA-Z0-9\-_]{16,}["']?/gi,
   /sk-[a-zA-Z0-9]{32,}/g,             // OpenAI key
-  /sk-ant-[a-zA-Z0-9\-]{32,}/g,       // Anthropic key
+  /sk-ant-[a-zA-Z0-9-]{32,}/g,        // Anthropic key
   /ghp_[a-zA-Z0-9]{36}/g,             // GitHub PAT
   /Bearer\s+[a-zA-Z0-9\-_.]{20,}/gi,  // Bearer tokens
 ];

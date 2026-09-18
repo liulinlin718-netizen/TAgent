@@ -10,30 +10,49 @@ import Redis from 'ioredis';
 export class RedisCache {
   private client: Redis;
   private prefix: string;
+  private available = false;
 
   constructor(
     connectionString: string = 'redis://localhost:6379',
     prefix: string = 'tagent:',
   ) {
     this.client = new Redis(connectionString, {
-      maxRetriesPerRequest: 3,
-      retryStrategy: (times) => Math.min(times * 200, 2000),
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+      retryStrategy: (times) => (times <= 1 ? Math.min(times * 200, 500) : null),
       lazyConnect: true,
+    });
+    this.client.on('error', () => {
+      this.available = false;
     });
     this.prefix = prefix;
   }
 
+  private isReady(): boolean {
+    return (this.client.status as string) === 'ready';
+  }
+
   /** 连接 Redis */
   async connect(): Promise<void> {
+    if (this.isReady()) {
+      this.available = true;
+      return;
+    }
+
     try {
       await this.client.connect();
+      this.available = this.isReady();
     } catch {
-      // 已连接时忽略错误
+      this.available = false;
+      this.client.disconnect();
+      throw new Error('Redis unavailable');
     }
   }
 
   /** 获取缓存数据 */
   async get<T>(key: string): Promise<T | null> {
+    if (!this.available || !this.isReady()) return null;
+
     try {
       const data = await this.client.get(this.prefix + key);
       if (!data) return null;
@@ -45,6 +64,8 @@ export class RedisCache {
 
   /** 设置缓存数据 */
   async set<T>(key: string, value: T, ttlSeconds: number = 300): Promise<void> {
+    if (!this.available || !this.isReady()) return;
+
     try {
       const serialized = JSON.stringify(value);
       if (ttlSeconds > 0) {
@@ -59,6 +80,8 @@ export class RedisCache {
 
   /** 删除缓存 */
   async del(key: string): Promise<void> {
+    if (!this.available || !this.isReady()) return;
+
     try {
       await this.client.del(this.prefix + key);
     } catch {
@@ -68,6 +91,8 @@ export class RedisCache {
 
   /** 按前缀批量清除 */
   async invalidatePattern(pattern: string): Promise<void> {
+    if (!this.available || !this.isReady()) return;
+
     try {
       const keys = await this.client.keys(this.prefix + pattern);
       if (keys.length > 0) {
@@ -80,6 +105,8 @@ export class RedisCache {
 
   /** 检查连接是否健康 */
   async ping(): Promise<boolean> {
+    if (!this.available || !this.isReady()) return false;
+
     try {
       const result = await this.client.ping();
       return result === 'PONG';
@@ -90,6 +117,11 @@ export class RedisCache {
 
   /** 关闭连接 */
   async close(): Promise<void> {
-    await this.client.quit();
+    this.available = false;
+    if (this.isReady()) {
+      await this.client.quit();
+      return;
+    }
+    this.client.disconnect();
   }
 }

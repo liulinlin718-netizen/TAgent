@@ -1,10 +1,13 @@
 # Dependencies
 node_modules/
+.pnpm-store/
 
 # Build outputs
 dist/
 .next/
+.next-local/
 out/
+*.tsbuildinfo
 
 # Turbo
 .turbo/
@@ -13,6 +16,8 @@ out/
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
 
 # IDE
 .vscode/
@@ -26,6 +31,15 @@ Thumbs.db
 
 # Traces (runtime generated)
 *.jsonl
+.tagent/
+.tmp/
+.playwright-cli/
+output/
+lighthouse-report*.json
+tagent-desktop-*.tgz
 
-# Docker 本地数据
+# Only synthetic fixtures belong in source control.
+!opensource/*/examples/*.jsonl
+
+# Docker 鏈湴鏁版嵁
 data/

@@ -5,7 +5,7 @@
  *   npx tsx packages/tagent-core/src/cli.ts "帮我调研支付 agent 的现状"
  *
  * 环境变量（优先级从高到低）：
- *   DEEPSEEK_API_KEY — DeepSeek API key (Anthropic兼容)
+ *   DEEPSEEK_API_KEY — DeepSeek API key (OpenAI-compatible)
  *   ANTHROPIC_API_KEY — Claude API key
  *   OPENAI_API_KEY — OpenAI API key
  *   TAVILY_API_KEY — Tavily 搜索 API key (可选)
@@ -16,12 +16,12 @@ import type { LLMProvider } from '@tagent/ai';
 import { runAgentLoop, ToolRegistry, TraceWriter, createWebSearchTool, createUrlReaderTool } from './index.js';
 
 function selectProvider(): { provider: LLMProvider; model: string } {
-  // DeepSeek (Anthropic-compatible API) — 优先
+  // DeepSeek (OpenAI-compatible API) — 优先
   if (process.env.DEEPSEEK_API_KEY) {
     return {
-      provider: new AnthropicProvider({
+      provider: new OpenAIProvider({
         apiKey: process.env.DEEPSEEK_API_KEY,
-        baseURL: 'https://api.deepseek.com/anthropic',
+        baseURL: 'https://api.deepseek.com',
         name: 'deepseek',
       }),
       model: 'deepseek-chat',

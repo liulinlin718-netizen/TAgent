@@ -1,0 +1,23 @@
+{
+  "name": "evidence-bound-review",
+  "version": "0.1.0",
+  "description": "Offline, evidence-linked checks for narrow office report constraints. Not a general fact checker.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liulinlin718-netizen/evidence-bound-review.git"
+  },
+  "homepage": "https://github.com/liulinlin718-netizen/evidence-bound-review#readme",
+  "bugs": { "url": "https://github.com/liulinlin718-netizen/evidence-bound-review/issues" },
+  "engines": { "node": ">=22" },
+  "exports": { ".": { "types": "./src/index.d.ts", "import": "./src/index.js" } },
+  "types": "./src/index.d.ts",
+  "bin": { "evidence-bound-review": "./src/cli.js" },
+  "files": ["src", "examples", "README.md", "LICENSE", "NOTICE"],
+  "scripts": {
+    "test": "node --test",
+    "demo": "node src/cli.js examples/project.json",
+    "demo:dates": "node src/cli.js examples/sources.json --json"
+  }
+}

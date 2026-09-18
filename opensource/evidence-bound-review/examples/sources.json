@@ -1,0 +1,31 @@
+{
+  "requirements": { "id": "brief", "text": "用合成材料编写截至2026-09-18的近30天进展；旧材料仅作背景。" },
+  "materials": [
+    {
+      "id": "old-source",
+      "text": "合成示例。发布日期：2025-09-01。本文描述了当时的试点方案。",
+      "source": {
+        "url": "https://example.org/synthetic/old",
+        "basis": "publication",
+        "publicationDate": "2025-09-01",
+        "dateQuote": "发布日期：2025-09-01"
+      }
+    },
+    {
+      "id": "recent-source",
+      "text": "合成示例。发布日期：2026-09-16。本文描述了一次演示，不证明大规模商用。",
+      "source": {
+        "url": "https://example.org/synthetic/recent",
+        "basis": "publication",
+        "publicationDate": "2026-09-16",
+        "dateQuote": "发布日期：2026-09-16"
+      }
+    }
+  ],
+  "report": "旧试点代表近30天的最新进展。\n近期演示报道的给定发布日期位于调研窗口内，真实性与具体结论仍待核对。",
+  "temporal": { "asOf": "2026-09-18", "days": 30 },
+  "citations": [
+    { "materialId": "old-source", "reportQuote": "旧试点代表近30天的最新进展。", "usage": "recent" },
+    { "materialId": "recent-source", "reportQuote": "近期演示报道的给定发布日期位于调研窗口内，真实性与具体结论仍待核对。", "usage": "recent" }
+  ]
+}

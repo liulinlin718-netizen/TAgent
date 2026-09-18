@@ -1,0 +1,42 @@
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, relative, isAbsolute } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { MCPRegistry, createMCPBridgeTool } from '@tagent/core';
+import { createMCPManagementRoutes } from '../mcp-management.js';
+
+const roots: string[] = [];
+afterEach(async () => { for (const root of roots.splice(0)) { const rel = relative(tmpdir(), root); if (!rel || rel.startsWith('..') || isAbsolute(rel)) throw new Error('Unsafe cleanup'); await rm(root, { recursive: true, force: true }); } });
+describe('MCP management API', () => {
+  it('redacts CRUD, persists only on confirmation, preserves edit values and never executes stdio tests', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'tagent-mcp-api-')); roots.push(root);
+    const registry = new MCPRegistry(root);
+    const app = createMCPManagementRoutes(registry);
+    const request = (path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST') => app.request(path, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const response = await request('/', { name: 'Test 中文', type: 'stdio', command: 'definitely-not-a-command', args: ['folder with spaces'], env: { API_KEY: 'top-secret' }, executionApproved: true, toolName: 'forged-permission' });
+    expect(response.status).toBe(201);
+    const saved = await response.json();
+    expect(JSON.stringify(saved)).not.toContain('top-secret');
+    expect(saved.executionApproved).toBe(false);
+    expect(saved.toolName).toBe(createMCPBridgeTool((await registry.getServer(saved.id))!).definition.name);
+    expect(saved.toolName).toBe('mcp_Test___');
+    expect((await (await request('/')).json()).servers[0].toolName).toBe(saved.toolName);
+    expect(await (await request('/')).text()).not.toContain('top-secret');
+    const before = await readFile(join(root, '.tagent', 'mcp.json'), 'utf8');
+    expect(before).not.toContain('toolName');
+    const test = await (await request(`/${saved.id}/test`, {})).json();
+    expect(test).toMatchObject({ status: 'preview_only', willExecute: false, willWrite: false, tools: [] });
+    expect(await readFile(join(root, '.tagent', 'mcp.json'), 'utf8')).toBe(before);
+    const approved = await (await request(`/${saved.id}/approval`, { confirmed: true, revision: saved.revision })).json();
+    expect(approved.executionApproved).toBe(true);
+    expect(approved.toolName).toBe(saved.toolName);
+    const edit = await (await request(`/${saved.id}`, { ...approved, name: 'Edited' }, 'PUT')).json();
+    expect(edit.executionApproved).toBe(false);
+    expect(edit.toolName).toBe('mcp_Edited');
+    expect((await new MCPRegistry(root).getServer(saved.id))?.env?.API_KEY).toBe('top-secret');
+    expect((await request(`/${saved.id}`, saved, 'PUT')).status).toBe(409);
+    expect((await request('/missing/test', {})).status).toBe(404);
+    expect((await request(`/${saved.id}`, undefined, 'DELETE')).ok).toBe(true);
+    expect(await (await request('/')).json()).toEqual({ servers: [] });
+  });
+});

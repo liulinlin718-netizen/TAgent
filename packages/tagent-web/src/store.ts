@@ -9,7 +9,7 @@
 
 import { create } from 'zustand';
 
-const API = 'http://localhost:3001';
+import { API_BASE as API, apiFetch as fetch } from './lib/api-client';
 
 // ─── Types ───────────────────────────────────────────
 

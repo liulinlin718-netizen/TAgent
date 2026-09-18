@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { MessageBus, type AgentMessage } from '../protocol.js';
+import { MessageBus } from '../protocol.js';
 
 describe('MessageBus', () => {
   // ─── createMessage ───────────────────────────────

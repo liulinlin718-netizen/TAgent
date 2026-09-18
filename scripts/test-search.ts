@@ -1,54 +1,34 @@
-/**
- * 通水测试 Step 1: Web Search 工具
- * 验证搜索工具在当前网络环境下能否返回结果
- */
-
+import assert from 'node:assert/strict';
 import { createWebSearchTool } from '../packages/tagent-core/src/tools/web-search.js';
+import { closeSharedBrowser } from '../packages/tagent-core/src/tools/browser-pool.js';
+import { loadServerEnvironment } from '../packages/tagent-server/src/config.js';
+import { fileURLToPath } from 'node:url';
+
+loadServerEnvironment(fileURLToPath(new URL('../', import.meta.url)));
+const freeOnly = process.argv.includes('--free-only');
+if (freeOnly) {
+  process.env.TAGENT_SEARCH_PROVIDER = 'auto';
+  for (const key of ['TAVILY_API_KEY', 'JINA_API_KEY', 'GITHUB_TOKEN', 'GH_TOKEN']) process.env[key] = '';
+}
+const queries = process.argv.slice(2).filter(value => value !== '--free-only');
+if (!queries.length) queries.push('近 30 天 AI Agent 最新进展', '支付 agent 现状');
 
 async function main() {
-  console.log('=== Step 1: Web Search 工具测试 ===\n');
-
-  const searchTool = createWebSearchTool();
-  
-  console.log('🔍 测试搜索: "支付 agent 现状 2024"');
-  console.log('─'.repeat(50));
-  
-  const start = Date.now();
+  const failures: string[] = [];
   try {
-    const result = await searchTool.execute({ query: '支付 agent 现状 2024', maxResults: 3 });
-    const elapsed = Date.now() - start;
-    
-    if (result.includes('搜索暂时不可用')) {
-      console.log(`❌ 搜索失败 (${elapsed}ms): 所有搜索源均不可用`);
-      console.log(result);
-    } else {
-      console.log(`✅ 搜索成功 (${elapsed}ms)`);
-      // 只打印前500字
-      console.log(result.slice(0, 500));
-      if (result.length > 500) console.log(`\n... (总共 ${result.length} 字符)`);
+    for (const query of queries) {
+      const started = Date.now();
+      const output = await createWebSearchTool({ topic: query }).execute({ query, maxResults: 5 });
+      const urls = [...output.matchAll(/^- URL: (https?:\/\/\S+)/gm)].map(match => match[1]);
+      console.log(JSON.stringify({ query, elapsedMs: Date.now() - started, candidateCount: urls.length }));
+      console.log(output);
+      if (!urls.length) failures.push(query);
+      assert.equal(new Set(urls).size, urls.length, 'Search candidates must be deduplicated');
     }
-  } catch (err) {
-    console.log(`❌ 搜索异常: ${(err as Error).message}`);
-  }
-
-  console.log('\n' + '─'.repeat(50));
-  console.log('🔍 测试搜索: "AI agent framework comparison"');
-  console.log('─'.repeat(50));
-  
-  const start2 = Date.now();
-  try {
-    const result2 = await searchTool.execute({ query: 'AI agent framework comparison', maxResults: 3 });
-    const elapsed2 = Date.now() - start2;
-    
-    if (result2.includes('搜索暂时不可用')) {
-      console.log(`❌ 搜索失败 (${elapsed2}ms)`);
-    } else {
-      console.log(`✅ 搜索成功 (${elapsed2}ms)`);
-      console.log(result2.slice(0, 500));
-    }
-  } catch (err) {
-    console.log(`❌ 搜索异常: ${(err as Error).message}`);
+    assert.equal(failures.length, 0, `No actual candidate URLs for: ${failures.join('; ')}`);
+  } finally {
+    await closeSharedBrowser();
   }
 }
 
-main().catch(console.error);
+main().catch(error => { console.error(error.message); process.exitCode = 1; });

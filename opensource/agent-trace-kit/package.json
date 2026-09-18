@@ -1,0 +1,21 @@
+{
+  "name": "agent-trace-kit",
+  "version": "0.1.0",
+  "description": "Offline, framework-independent workflow trace validation and analysis for agents.",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/liulinlin718-netizen/agent-trace-kit.git" },
+  "homepage": "https://github.com/liulinlin718-netizen/agent-trace-kit#readme",
+  "bugs": { "url": "https://github.com/liulinlin718-netizen/agent-trace-kit/issues" },
+  "exports": { ".": { "types": "./src/index.d.ts", "import": "./src/index.js" } },
+  "types": "./src/index.d.ts",
+  "bin": { "agent-trace": "./bin/agent-trace.js" },
+  "files": ["src", "bin", "examples", "README.md", "LICENSE", "NOTICE"],
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "demo": "node bin/agent-trace.js summary examples/research.jsonl",
+    "demo:json": "node bin/agent-trace.js summary examples/research.jsonl --json"
+  },
+  "keywords": ["agent", "workflow", "trace", "jsonl", "observability"]
+}

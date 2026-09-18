@@ -1,0 +1,24 @@
+.root { min-width: 0; margin-bottom: 20px; padding-block: 16px; border-block: 1px solid var(--border-light); font-size: 13px; line-height: 1.6; }
+.toolbar { display: flex; align-items: center; gap: 8px; }
+.root button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 7px 10px; border: 1px solid var(--border-light); border-radius: 6px; color: inherit; background: var(--color-bg-base); font: inherit; cursor: pointer; }
+.root button:disabled { opacity: .5; cursor: default; }
+.root button svg { flex-shrink: 0; }
+.fileInput { display: none; }
+.fileName { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.field { display: flex; flex-direction: column; gap: 6px; margin-block: 12px; }
+.field input, .field select { width: 100%; min-height: 38px; padding: 8px; border: 1px solid var(--border-light); border-radius: 6px; color: inherit; background: var(--color-bg-surface); font: inherit; }
+.ranges { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.note, .notes { color: var(--color-text-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.notes { padding-left: 18px; }
+.notes li { margin-block: 6px; }
+.scroll { overflow: auto; max-height: 280px; border-block: 1px solid var(--border-light); }
+.scroll table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.scroll caption { text-align: left; padding: 8px 0; color: var(--color-text-secondary); }
+.scroll th, .scroll td { min-width: 80px; max-width: 240px; padding: 8px; text-align: left; vertical-align: top; overflow-wrap: anywhere; border-bottom: 1px solid var(--border-light); }
+.scroll thead { position: sticky; top: 0; background: var(--color-bg-surface); }
+.scroll th:first-child { min-width: 40px; }
+.confirm { display: flex; align-items: flex-start; gap: 8px; margin-block: 14px; }
+.confirm input { width: 16px; height: 16px; flex-shrink: 0; margin-top: 3px; }
+.error { color: #b91c1c; overflow-wrap: anywhere; }
+:global([data-theme="dark"]) .error { color: #fca5a5; }
+@media (max-width: 600px) { .ranges { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; } .toolbar { flex-wrap: wrap; } }

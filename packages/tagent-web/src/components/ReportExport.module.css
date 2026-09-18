@@ -1,0 +1,7 @@
+.root { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 16px; min-width: 0; font-size: 13px; color: var(--color-text-secondary); }
+.root button { display: inline-flex; gap: 8px; align-items: center; justify-content: center; min-height: 40px; padding: 8px 12px; border: 1px solid var(--border-light); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); cursor: pointer; font: inherit; flex-shrink: 0; }
+.root button:hover { background: var(--color-bg-base); }
+.root button:focus-visible { outline: 2px solid var(--color-accent-secondary); outline-offset: 3px; }
+.root button:disabled { cursor: wait; opacity: .65; }
+.root span, .root p { overflow-wrap: anywhere; max-width: 100%; line-height: 1.6; margin: 0; }
+.root p { flex-basis: 100%; color: var(--color-text-primary); }

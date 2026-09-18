@@ -1,0 +1,80 @@
+async (page) => {
+  const check = (value, message) => { if (!value) throw new Error(message); };
+  const settings = await page.evaluate(() => ({ base: new URL(location.href).searchParams.get('runFixture'), model: new URL(location.href).searchParams.get('modelFixture') }));
+  for (const value of Object.values(settings)) check(value && /^http:\/\/127\.0\.0\.1:\d+$/.test(value) && !/:(3000|3001)$/.test(value), 'Isolated fixtures required');
+  const errors = [], requests = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('request', request => { if (request.method() === 'POST') requests.push(request.url()); });
+  const stats = async () => (await page.request.get(settings.model + '/stats')).json();
+  const until = async test => { for (let i = 0; i < 200; i++) { if (await test()) return; await page.waitForTimeout(50); } throw new Error('Browser condition timed out'); };
+  const panel = page.getByRole('region', { name: '工具执行确认' }).last();
+  const input = page.getByRole('textbox', { name: '输入任务，按 Enter 发送...' });
+  const before = await stats();
+  const title = 'approval-browser-' + Date.now();
+  await input.fill(title + '：读取绑定资料，整理文档摘要，不联网。');
+  await page.getByRole('button', { name: '发送任务', exact: true }).click();
+  await panel.getByRole('button', { name: '允许本次', exact: true }).waitFor();
+  check((await stats()).resourceReceipts === before.resourceReceipts, 'No execution before approval');
+  check((await page.locator('main').innerText()).includes('等待确认'), 'Pending action must be clear');
+  await page.locator('body').ariaSnapshot();
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 960 });
+    if (width === 390) await page.getByRole('button', { name: '返回工具确认', exact: true }).click();
+    await panel.getByRole('button', { name: '允许本次', exact: true }).scrollIntoViewIfNeeded();
+    check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No pending-page overflow at ' + width);
+    const bounds = await panel.boundingBox(); check(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width + 1, 'Approval panel fits ' + width);
+    await page.screenshot({ path: 'output/playwright/tool-approval-pending-' + width + '.png', animations: 'disabled' });
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await panel.getByRole('button', { name: '允许本次', exact: true }).click();
+  await until(async () => (await stats()).resourceReceipts === before.resourceReceipts + 1);
+  await page.getByRole('button', { name: '停止任务', exact: true }).waitFor({ state: 'hidden' });
+  await panel.getByRole('heading', { name: /已批准本次/ }).waitFor();
+  const workspaces = (await (await page.request.get(settings.base + '/api/workspaces')).json()).workspaces;
+  const sessions = (await Promise.all(workspaces[0].sessions.map(async session => (await page.request.get(settings.base + '/api/workspaces/' + workspaces[0].id + '/sessions/' + session.id)).json())));
+  const session = sessions.find(session => session.messages.some(message => message.role === 'user' && message.content.startsWith(title)));
+  check(session, 'Browser task is saved');
+  const runId = session.messages.at(-1).run.id;
+  const saved = (await (await page.request.get(settings.base + '/api/governance/events?runId=' + runId)).json()).events;
+  check(saved.some(event => event.approval?.status === 'approved' && event.persisted), 'Approval is in saved canonical history');
+  await page.getByRole('link', { name: /治理仪表盘/ }).click();
+  await page.getByRole('heading', { name: '治理记录', exact: true }).waitFor();
+  await page.locator('body').ariaSnapshot();
+  await page.getByText('按任务或 Agent 筛选', { exact: true }).click();
+  await page.getByRole('textbox', { name: '任务 ID', exact: true }).fill(runId);
+  await page.getByRole('button', { name: '筛选', exact: true }).click();
+  await until(async () => (await page.locator('[data-event-id]').count()) === saved.length);
+  check(JSON.stringify((await page.locator('[data-event-id]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-event-id')))).sort()) === JSON.stringify(saved.map(event => event.id).sort()), 'UI and API show identical records');
+  await page.getByText('查看任务与决定详情', { exact: true }).first().click();
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 960 });
+    await page.getByRole('heading', { name: '治理记录', exact: true }).scrollIntoViewIfNeeded();
+    check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No governance-page overflow at ' + width);
+    await page.screenshot({ path: 'output/playwright/governance-history-' + width + '.png', animations: 'disabled' });
+  }
+  const failedRead = route => route.fulfill({ status: 503, json: { error: 'Fixture storage unavailable' } });
+  await page.route(settings.base + '/api/governance/events?**', failedRead);
+  await page.getByRole('button', { name: '刷新治理记录', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: '治理记录读取失败' }).waitFor();
+  check(await page.locator('[data-event-id]').count() === saved.length, 'Read error must preserve last successful history');
+  await page.unroute(settings.base + '/api/governance/events?**', failedRead);
+  await page.getByRole('button', { name: '刷新治理记录', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: '治理记录读取失败' }).waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: '查看来源任务', exact: true }).first().click();
+  await input.waitFor();
+  await panel.getByRole('heading', { name: /已批准本次/ }).waitFor();
+  check(!(await panel.getByRole('button', { name: '允许本次', exact: true }).count()), 'History must never offer replay approval');
+  await input.fill('approval-browser-deny：读取绑定资料，整理文档摘要，不联网。');
+  await page.getByRole('button', { name: '发送任务', exact: true }).click();
+  await panel.getByRole('button', { name: '拒绝本次', exact: true }).waitFor();
+  const beforeDeny = await stats();
+  await panel.getByRole('button', { name: '拒绝本次', exact: true }).click();
+  await panel.getByRole('heading', { name: /已拒绝/ }).waitFor();
+  await page.getByRole('button', { name: '停止任务', exact: true }).waitFor({ state: 'hidden' });
+  check((await stats()).resourceReceipts === beforeDeny.resourceReceipts, 'Denied tool must not execute');
+  check(requests.filter(url => url.includes('/api/approval/')).length === 2, 'Exactly two explicit decisions; no silent retry');
+  check(!requests.some(url => /:(3000|3001)\/api\//.test(url)), 'Never submit to user backend');
+  check(errors.length === 0, 'Unexpected page errors: ' + errors.join('; '));
+  return { passed: true, persistedApproval: true, canonicalHistory: true, sourceTaskNavigation: true, failureRecovery: true,
+    explicitDecisions: 2, userWrites: 0, viewports: [1440, 390, 320], pageErrors: errors };
+}

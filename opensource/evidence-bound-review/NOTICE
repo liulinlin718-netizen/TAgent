@@ -1,0 +1,33 @@
+Evidence-Bound Review 0.1.0
+
+This standalone extraction was prepared from TAgent's own office-report
+constraint checks, under the user's instruction to make small reusable
+open-source components. Source references within TAgent:
+
+- packages/tagent-core/src/office-grounding.ts
+- packages/tagent-core/src/__tests__/office-grounding.test.ts
+- packages/tagent-core/src/research-window.ts
+- packages/tagent-core/src/research-evidence.ts (publication-date constraints)
+- packages/tagent-core/src/office-blocks.ts (exact text provenance concept only)
+
+The standalone implementation introduces its own input contract, exact UTF-16
+references, explicit citation bindings, resource bounds, ESM API, declarations
+and CLI. It is not a drop-in replacement for TAgent's verifier or its benchmark.
+
+Window semantics are explicit: 30 inclusive calendar days means asOf and the
+29 preceding days. TAgent's historical rolling-window helper subtracts 30 days;
+this package does not silently inherit that older contract.
+
+No third-party Markdown parser, model SDK, user conversation, credential,
+retrieved article, or other private data is bundled. Examples and regression
+materials are synthetic. There are no runtime or development dependencies in
+package.json, and no network or model calls in tests.
+
+The LICENSE file covers this extracted directory. It does not assert a license
+for the rest of the TAgent repository, for external sources supplied by users,
+or for any third-party package.
+
+Project repository:
+https://github.com/liulinlin718-netizen/evidence-bound-review
+
+This is a source distribution. No npm package publication has been performed.

@@ -9,57 +9,25 @@
  * - 可配置白名单: 仅允许访问指定域名
  */
 
-import type { ToolExecutor } from './registry.js';
+import type { ToolExecutor, ToolExecutionContext } from './registry.js';
+import { requestSignal } from '../run-control.js';
+import { assertPublicUrl, publicFetch } from '../public-network.js';
+import { evidencePassages, extractPageEvidence, formatSourceReferences, makeResearchSource, normalizeSourceUrl, sourceRelevance, type ResearchSource } from '../research-evidence.js';
+import { getResearchDateContext, isReadableMaterial } from './web-research.js';
 
 // ─── Domain Security (D12) ───────────────────────────
 
 /** 内网/私有地址黑名单 — 始终拦截 */
-const BLOCKED_PATTERNS = [
-  /^localhost$/i,
-  /^127\./,
-  /^10\./,
-  /^192\.168\./,
-  /^172\.(1[6-9]|2\d|3[01])\./,
-  /^0\.0\.0\.0$/,
-  /^\[::1\]$/,
-  /\.internal$/i,
-  /\.local$/i,
-  /\.corp$/i,
-];
-
 function isDomainAllowed(url: string, allowedDomains?: string[]): { allowed: boolean; reason?: string } {
-  let hostname: string;
   try {
-    hostname = new URL(url).hostname;
-  } catch {
-    return { allowed: false, reason: `无效的 URL: ${url}` };
+    assertPublicUrl(url, allowedDomains);
+    return { allowed: true };
+  } catch (error) {
+    return { allowed: false, reason: error instanceof Error ? error.message : '无效地址' };
   }
-
-  // 1. 黑名单检查 — 始终拦截私有地址
-  for (const pattern of BLOCKED_PATTERNS) {
-    if (pattern.test(hostname)) {
-      return { allowed: false, reason: `安全拦截: "${hostname}" 为内部/私有地址` };
-    }
-  }
-
-  // 2. 白名单检查 — 如果配置了白名单，仅允许白名单域名
-  if (allowedDomains && allowedDomains.length > 0) {
-    const isWhitelisted = allowedDomains.some(domain => {
-      if (domain.startsWith('.')) {
-        // 通配符: .example.com 匹配 sub.example.com
-        return hostname.endsWith(domain) || hostname === domain.slice(1);
-      }
-      return hostname === domain;
-    });
-    if (!isWhitelisted) {
-      return { allowed: false, reason: `域名 "${hostname}" 不在白名单中。允许的域名: ${allowedDomains.join(', ')}` };
-    }
-  }
-
-  return { allowed: true };
 }
 
-export function createUrlReaderTool(options?: { allowedDomains?: string[] }): ToolExecutor {
+export function createUrlReaderTool(options?: { allowedDomains?: string[]; topic?: string; onSources?: (sources: ResearchSource[]) => void }): ToolExecutor {
   const allowedDomains = options?.allowedDomains;
   return {
     definition: {
@@ -81,9 +49,11 @@ export function createUrlReaderTool(options?: { allowedDomains?: string[] }): To
       },
     },
 
-    async execute(args: Record<string, unknown>): Promise<string> {
-      const url = args.url as string;
-      const maxLength = (args.maxLength as number) || 5000;
+    async execute(args: Record<string, unknown>, context?: ToolExecutionContext): Promise<string> {
+      context?.signal?.throwIfAborted();
+      const url = typeof args.url === 'string' ? args.url.trim() : '';
+      const size = Number(args.maxLength);
+      const maxLength = Number.isFinite(size) && size > 0 ? Math.min(15000, Math.max(500, Math.floor(size))) : 5000;
 
       // D12: 域名安全检查
       const domainCheck = isDomainAllowed(url, allowedDomains);
@@ -92,66 +62,48 @@ export function createUrlReaderTool(options?: { allowedDomains?: string[] }): To
       }
 
       try {
-        const response = await fetch(url, {
-          headers: {
-            'User-Agent': 'TAgent/0.1 (Research Assistant)',
-            'Accept': 'text/html,application/xhtml+xml,text/plain',
-          },
-          signal: AbortSignal.timeout(10000), // 10s timeout
+        const response = await publicFetch(url, {
+          headers: { 'User-Agent': 'TAgent/0.1 (Research Assistant)', Accept: 'text/html,application/xhtml+xml,text/plain' },
+          signal: requestSignal(10000, context?.signal), allowedDomains,
         });
+        const target = normalizeSourceUrl(response.url);
 
         if (!response.ok) {
           return `无法读取 URL (HTTP ${response.status}): ${url}`;
         }
 
         const contentType = response.headers.get('content-type') || '';
-        const html = await response.text();
-
-        // Convert HTML to plain text (basic)
-        let text = htmlToText(html);
+        if (!/text\/|html/i.test(contentType)) {
+          await response.body?.cancel();
+          return `暂不支持读取此内容类型: ${contentType || 'unknown'}`;
+        }
+        const html = Buffer.from(await response.arrayBuffer());
+        const page = extractPageEvidence(html, target, contentType);
+        const source = makeResearchSource({
+          url: target, title: page.title || target, query: options?.topic || '',
+          retrievedAt: getResearchDateContext().isoDate, publication: page.publication,
+          readable: isReadableMaterial({ text: page.text }),
+          relevant: options?.topic ? sourceRelevance(options.topic, page.text) >= 0.6 : true,
+          excerpt: page.text.slice(0, 2400),
+          references: page.references,
+          passages: evidencePassages(page.text, options?.topic),
+          requestedUrls: [normalizeSourceUrl(url)],
+        });
+        options?.onSources?.([source]);
+        if (!source.readable) return `未读取到可用正文（可能是验证页面或正文过短）: ${target}`;
+        let text = page.text;
 
         // Truncate
         if (text.length > maxLength) {
           text = text.slice(0, maxLength) + '\n\n[...内容已截断，共 ' + text.length + ' 字符]';
         }
 
-        return `## 网页内容: ${url}\n\n${text}`;
+        const date = source.publication.basis === 'publication_metadata' ? `${source.publication.date}（发布元数据）` : '未核实，仅可作背景';
+        return `## 网页内容: ${page.title || target}\n- URL: ${target}\n- 读取日期: ${source.retrievedAt}\n- 发布日期: ${date}\n- 发布者: ${source.publisher === 'primary' ? '已识别发布方域名' : '身份未核实'}\n\n${text}${formatSourceReferences(source.references)}`;
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         return `读取 URL 失败: ${msg}`;
       }
     },
   };
-}
-
-function htmlToText(html: string): string {
-  let text = html;
-
-  // Remove scripts and styles
-  text = text.replace(/<script[\s\S]*?<\/script>/gi, '');
-  text = text.replace(/<style[\s\S]*?<\/style>/gi, '');
-  text = text.replace(/<nav[\s\S]*?<\/nav>/gi, '');
-  text = text.replace(/<footer[\s\S]*?<\/footer>/gi, '');
-  text = text.replace(/<header[\s\S]*?<\/header>/gi, '');
-
-  // Convert common elements
-  text = text.replace(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/gi, '\n## $1\n');
-  text = text.replace(/<p[^>]*>(.*?)<\/p>/gi, '\n$1\n');
-  text = text.replace(/<br\s*\/?>/gi, '\n');
-  text = text.replace(/<li[^>]*>(.*?)<\/li>/gi, '- $1\n');
-  text = text.replace(/<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, '$2 ($1)');
-
-  // Remove remaining tags
-  text = text.replace(/<[^>]+>/g, '');
-
-  // Clean up whitespace
-  text = text.replace(/&nbsp;/g, ' ');
-  text = text.replace(/&amp;/g, '&');
-  text = text.replace(/&lt;/g, '<');
-  text = text.replace(/&gt;/g, '>');
-  text = text.replace(/&quot;/g, '"');
-  text = text.replace(/\n{3,}/g, '\n\n');
-  text = text.trim();
-
-  return text;
 }

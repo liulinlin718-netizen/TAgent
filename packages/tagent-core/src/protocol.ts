@@ -29,6 +29,64 @@ export interface AgentMessage<T = unknown> {
   payload: T;
 }
 
+export type WorkflowEventType =
+  | 'task'
+  | 'agent'
+  | 'tool'
+  | 'governance'
+  | 'synthesis'
+  | 'complete'
+  | string;
+
+export type WorkflowEventStatus =
+  | 'pending'
+  | 'running'
+  | 'complete'
+  | 'failed'
+  | 'blocked'
+  | 'warning'
+  | 'passed';
+
+export interface WorkflowAgentSnapshot {
+  version: 1;
+  capturedAt: number;
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  type: 'resident' | 'task_spawned';
+  role: string;
+  parentAgentId: string | null;
+  capabilities: { skills: string[]; tools: string[]; mcpServers: string[] };
+  constraints: {
+    allowedTools: string[];
+    allowedDomains: string[];
+    maxCostPerTask: number;
+    maxFissionDepth: number;
+    approvalMode: 'suggest' | 'auto_edit' | 'full_auto';
+  };
+  card: { responsibilities: string[]; boundaries: string[]; qualityChecks: string[]; outputStandards: string[] };
+}
+
+export interface WorkflowEvent {
+  eventId: string;
+  sessionId?: string;
+  runId?: string;
+  taskId?: string;
+  parentTaskId?: string;
+  agentSnapshot?: WorkflowAgentSnapshot;
+  type: WorkflowEventType;
+  agentId?: string;
+  parentAgentId?: string;
+  status?: WorkflowEventStatus;
+  summary: string;
+  timestamp: number;
+  cost?: number;
+  toolName?: string;
+  resultLength?: number;
+  data?: Record<string, unknown>;
+}
+
 // ─── Payload Definitions ─────────────────────────────
 
 /** 父→子: 委派任务，含目标、上下文、约束 */
@@ -72,6 +130,16 @@ export interface TaskFailedPayload {
 
 /** 治理引擎→Agent: 约束检查结果通知 */
 export interface GovernanceEventPayload {
+  ruleName?: string;
+  decision?: {
+    policyVersion: 1;
+    template: string;
+    ruleId: string;
+    effect: 'allow' | 'stop' | 'review' | 'inform';
+    reason: string;
+    alternatives: string[];
+    inputs: Record<string, string | number | boolean>;
+  };
   policyType: 'resource' | 'security' | 'quality' | 'alignment' | 'organization';
   severity: 'hard' | 'soft' | 'info';
   result: 'passed' | 'blocked' | 'warning';

@@ -1,0 +1,24 @@
+Agent Trace Kit
+Copyright (c) 2026 TAgent contributors
+License: MIT (see LICENSE)
+
+This standalone implementation was developed from TAgent's own event-model
+and task-instance trace design. Design references in the source workspace:
+
+- packages/tagent-core/src/protocol.ts
+- packages/tagent-core/src/workflow-history.ts
+- packages/tagent-server/src/workflow-catalog.ts
+- packages/tagent-server/src/workflow-index.ts
+- packages/tagent-server/src/workflow-events.ts
+- packages/tagent-web/src/app/WorkflowDrawer.logic.ts
+
+This package does not import those modules, bundle TAgent services or include
+third-party code. Framework-specific UI, storage adapters and runtime execution
+were not extracted. Built-in Node.js APIs are used normally as runtime APIs.
+
+Fixtures are newly authored synthetic logs. No credentials, private traces,
+user conversations, application settings or paid provider output are included.
+
+The project's name is a local working name, not a claim of an existing npm
+publication or registered trademark. Remote publication requires the owner's
+separate decision. This notice is not a warranty of log authenticity or safety.

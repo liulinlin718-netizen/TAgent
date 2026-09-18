@@ -28,6 +28,8 @@ export { MODEL_PRICING, calculateCost } from './types.js';
 // Providers
 export { AnthropicProvider } from './providers/anthropic.js';
 export { OpenAIProvider } from './providers/openai.js';
+export { ProviderRequestError, classifyProviderError } from './provider-request.js';
+export type { ProviderFailureCode, ProviderOptions } from './provider-request.js';
 
 // Cost Tracking
 export { CostTracker } from './cost-tracker.js';

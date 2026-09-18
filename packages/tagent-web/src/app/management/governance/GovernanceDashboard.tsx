@@ -14,7 +14,7 @@ import {
 } from 'recharts';
 import styles from './management.module.css';
 
-const API = 'http://localhost:3001';
+import { API_BASE as API, apiFetch as fetch } from '../../../lib/api-client';
 
 interface Metrics {
   totalRequests: number;

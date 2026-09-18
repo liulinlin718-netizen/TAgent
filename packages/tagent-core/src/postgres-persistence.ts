@@ -70,6 +70,11 @@ export class PostgresPersistence implements PersistenceAdapter {
     `;
   }
 
+  async remove(key: string): Promise<void> {
+    await this.ensureSchema();
+    await this.sql`DELETE FROM kv_store WHERE key = ${key}`;
+  }
+
   /** 关闭连接池 */
   async close(): Promise<void> {
     await this.sql.end();
