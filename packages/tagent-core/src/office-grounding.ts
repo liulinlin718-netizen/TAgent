@@ -67,10 +67,12 @@ export function inspectOfficeGrounding(task: string, output: string): OfficeChec
     const declaredResponsibilities = new RegExp(`${pending.role}[^。；;\\n]{0,8}(?:负责|统筹|管理|承担|分配)`);
     if (input.some(sentence => declaredResponsibilities.test(sentence))) continue;
     for (const statement of statements) {
-      const prose = statement.replace(quoted, '');
-      if (!prose.includes(pending.role) || alternative.test(prose) || correction.test(prose) || /建议/.test(prose)) continue;
-      const claim = /(?:由此|因此|所以|因而|导致)[^。；;|\n]{0,64}(?:责任归属|任务派发|整体排期|所有阶段|各阶段|全部任务|整个项目)/.exec(prose);
+      // Mask quoted conclusions, but keep offsets so a cited premise can still support a check.
+      const prose = statement.replace(quoted, match => ' '.repeat(match.length));
+      if (alternative.test(prose) || correction.test(prose) || /建议/.test(prose)) continue;
+      const claim = /(?:由此|因此|所以|因而|导致)[^。；;|\n]{0,64}(?:责任归属|任务派发|整体(?:研发|项目)?(?:排期|推进)|所有阶段|各阶段|全部任务|整个项目)/.exec(prose);
       if (!claim || /(?:无法|不能|不可)(?:据此)?(?:确认|推断|判断|断定|证明)(?:其|该岗位)?(?:负责|承担|统筹)/.test(claim[0])) continue;
+      if (!statement.slice(0, claim.index).includes(pending.role)) continue;
       if (/(?:不代表|不意味着|不等于)\s*$/.test(prose.slice(0, claim.index))
         || /^(?:由此|因此|所以|因而|导致)\s*(?:这)?(?:并)?(?:不代表|不意味着|不等于)/.test(claim[0])) continue;
       add('role-scope', '岗位待定后的职责推论待核对', pending.quote, statement,

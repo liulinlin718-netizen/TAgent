@@ -22,6 +22,10 @@ describe('evidence-bound office contradiction checks', () => {
     '研发负责人待定仅指该岗位人选未定，由此无法确认研发环节的责任归属与任务派发对象。',
     '研发负责人待定仅指该岗位人选未定，由此无法确认研发环节的责任归属与任务派发对象；这不等于各任务现实中无人承担，也不影响排期计算。',
     '采购主管待定，因此整个项目无法开展。',
+    '材料明确写明“研发负责人待定”，因此B、C、D及整体研发推进的负责人员仍未确定。',
+    '材料为"研发负责人待定"，因此整个项目缺少推进责任人。',
+    '材料为`研发负责人待定`，因而整体项目推进受阻。',
+    '研发负责人待定，因此整体研发推进受影响。',
   ])('does not let model approval certify an unsupported role-to-project implication: %s', output => {
     const task = output.startsWith('采购') ? '采购主管待定；其余材料没有提供。' : projectTask;
     const result = parseOfficeReview(positiveReview(task, output), task, output, [{ id: 'input', label: '材料', text: task }], 'fixture');
@@ -35,6 +39,15 @@ describe('evidence-bound office contradiction checks', () => {
     '研发负责人待定，不代表整个项目无人负责。',
     '研发负责人待定，因此并不意味着整个项目无人负责。',
     '研发负责人待定，因此不能推断其负责整个项目。',
+    '材料明确写明“研发负责人待定”，因此该岗位人选未定。',
+    '材料明确写明“研发负责人待定”，因此不能推断其负责整个项目。',
+    '材料明确写明“研发负责人待定”，因此并不意味着整个项目无人负责。',
+    '材料为“研发负责人待定”，若该岗位负责整个项目，则整个项目的分工仍需确认。',
+    '材料为“研发负责人待定”，建议逐项确认整个项目的分工。',
+    '原句是“研发负责人待定，因此整个项目无法开展”。',
+    '“研发负责人待定，因此整个项目无法开展”没有足够依据。',
+    '材料为“研发负责人待定”，有人写成“因此整个项目无法开展”。',
+    '其他信息未给出，因此整体排期仍按工作日表达；材料还给出“研发负责人待定”。',
     '若研发负责人负责所有阶段，因此所有阶段可能受影响。',
     '建议确认研发负责人是否负责整个项目。',
     '> 研发负责人待定，因此整个项目无法开展。',
@@ -352,11 +365,13 @@ describe('bounded repair of known contradictions', () => {
   const options = (call: LLMProvider['call']) => ({ provider: { name: 'fixture', call, stream: async function* () {} },
     task: projectTask, output: projectBad, materials, model: 'deepseek-chat', maxCost: 1, costTracker: new CostTracker(), qualityChecks: [] });
 
-  it('routes an unverified scope implication through one bounded revision without declaring it false', async () => {
+  it.each([false, true])('routes a cited scope implication through one revision without declaring it false (partial=%s)', async partial => {
     const task = '采购主管待定；各任务分工材料未提供。';
-    const draft = '采购主管待定，因此整个项目无法开展。';
+    const draft = '材料记载“采购主管待定”，因此整个项目无法开展。';
     const corrected = '采购主管人选待定；各任务分工材料未提供，建议分别确认。';
-    const call = vi.fn<LLMProvider['call']>().mockResolvedValueOnce(response(positiveReview(task, draft)))
+    const first = JSON.parse(positiveReview(task, draft));
+    if (partial) first.calculations = [{ operation: 'invalid' }];
+    const call = vi.fn<LLMProvider['call']>().mockResolvedValueOnce(response(JSON.stringify(first)))
       .mockResolvedValueOnce(response(corrected)).mockResolvedValueOnce(response(positiveReview(task, corrected)));
     const result = await verifyOfficeDelivery({ ...options(call), task, output: draft,
       materials: [{ id: 'input', label: '材料', text: task }] });
@@ -364,6 +379,8 @@ describe('bounded repair of known contradictions', () => {
     expect(result.output).toBe(corrected);
     expect(result.review.status).toBe('passed');
     expect(result.review.previous?.output).toBe(draft);
+    expect(result.review.previous?.review.status).toBe(partial ? 'unverified' : 'needs_revision');
+    if (partial) expect(result.review.previous?.review.issues.join()).toContain('算术');
     expect(result.review.previous?.review.checks).toContainEqual(expect.objectContaining({ status: 'unverified', method: 'programmatic' }));
     expect(JSON.parse(call.mock.calls[1][0].messages[1].content).feedback).toContainEqual(expect.objectContaining({
       label: '岗位待定后的职责推论待核对', evidence: [{ materialId: 'input', label: '用户提供的任务与材料', quote: '采购主管待定' }],
