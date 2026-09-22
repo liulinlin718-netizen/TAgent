@@ -1,5 +1,7 @@
 # TAgent
 
+[中文](./README.md) | [English](./README_EN.md)
+
 > 面向非技术用户的可视化多 Agent 办公协作平台。
 
 TAgent 将调研、文档、数据分析、项目管理、沟通邮件和演示汇报等办公任务交给专业 Agent 协作完成。用户可以像发起一段对话一样描述目标，同时在可视化工作流中了解任务如何被拆解、由谁执行、调用了哪些工具、触发了哪些治理规则，以及最终结果基于哪些材料形成。
@@ -103,6 +105,23 @@ Agent 大厅使用七个维度展示能力：调研与事实验证、指令遵�
 评分会明确标注来源：静态配置估算、已保存任务观察或用户手动触发的固定材料 Benchmark。打开大厅不会自动产生模型费用，评测结果也不会被描述为外部权威榜单成绩。
 
 ## 系统架构
+
+```mermaid
+flowchart LR
+    U[用户任务] --> O[Orchestrator]
+    O --> A1[常驻 Agent]
+    O --> A2[任务子 Agent]
+    A1 --> S[Skill Packages]
+    A2 --> S
+    S --> T[内置工具 / MCP]
+    T --> G[治理与确认]
+    G --> V[核对与综合]
+    V --> R[结构化回复与交付物]
+    O -. WorkflowEvent .-> W[工作流 Drawer]
+    T -. WorkflowEvent .-> W
+    G -. WorkflowEvent .-> W
+    V -. WorkflowEvent .-> W
+```
 
 ```text
 packages/
@@ -230,6 +249,10 @@ TAgent 的三个通用机制也以小型、可独立使用的开源工具提供�
 - [Agent Trace Kit](https://github.com/liulinlin718-netizen/agent-trace-kit)：校验、整理和查询 Agent WorkflowEvent JSONL。
 - [Approval-First Import](https://github.com/liulinlin718-netizen/approval-first-import)：为 Skill/MCP 导入提供内容绑定的预览与确认门。
 - [Evidence-Bound Review](https://github.com/liulinlin718-netizen/evidence-bound-review)：在给定材料范围内检查办公报告的明确约束冲突。
+
+## 参与贡献
+
+欢迎通过 [Issues](https://github.com/liulinlin718-netizen/TAgent/issues) 提交可复现的问题、产品建议和安全边界讨论。代码贡献请保持修改范围清晰，并在提交前运行 `pnpm check`。请勿在 Issue、日志或测试夹具中上传 API Key、真实会话、业务文件或其他敏感信息。
 
 ## 许可
 
