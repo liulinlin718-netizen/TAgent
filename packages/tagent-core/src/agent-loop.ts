@@ -143,6 +143,12 @@ export async function runAgentLoop(
   };
 
   while (iteration < maxIterations && !outOfTime() && !signal?.aborted) {
+    if (costTracker.totalCost >= maxCostPerTask) {
+      return finish({ success: false,
+        output: buildPartialOutput(messages, '本任务模型预算已用尽，未发起新的模型请求。'),
+        iterations: iteration, totalCost: costTracker.totalCost, totalTokens: costTracker.totalTokens,
+        traceFile: traceWriter.getPath() });
+    }
     iteration++;
     events?.onIteration?.(iteration);
 

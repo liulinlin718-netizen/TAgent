@@ -153,6 +153,18 @@ describe('evidence-bound office contradiction checks', () => {
     expect(inspectOfficeGrounding(projectTask, '若未来另行批准改变串行条件，可考虑并行开展。')).toEqual([]);
     expect(inspectOfficeGrounding(projectTask, '不要并行开展，按11个工作日串行交付。')).toEqual([]);
   });
+  it('keeps a known serial constraint when the same sentence has an unrelated unknown', () => {
+    const checks = inspectOfficeGrounding('严格串行，负责人未知。', '建议并行执行。');
+    expect(checks).toContainEqual(expect.objectContaining({ label: '建议违反已知串行约束' }));
+  });
+  it('checks each parallelization proposal without letting an earlier prohibition hide it', () => {
+    const task = '严格串行。';
+    expect(inspectOfficeGrounding(task, '不要并行设计和开发；建议开发和测试并行。'))
+      .toContainEqual(expect.objectContaining({ label: '建议违反已知串行约束' }));
+    expect(inspectOfficeGrounding(task, '不建议设计和开发并行，建议开发和测试并行。'))
+      .toContainEqual(expect.objectContaining({ label: '建议违反已知串行约束' }));
+    expect(inspectOfficeGrounding(task, '若用户另行批准改变串行条件，可以在新方案中并行开展。')).toEqual([]);
+  });
   it.each([
     '| 缓冲安排未说明 | 材料给定“无并行条件”，未说明缓冲安排 | 是否设置缓冲需用户决策 |',
     '建议遵守无并行条件，缓冲安排未说明。',

@@ -6,6 +6,8 @@ Agent Trace Kit is a zero-dependency Node.js library and CLI for validating, org
 
 It is designed for agent platforms, automation systems, and local debugging tools. When evidence is missing or contradictory, Agent Trace Kit reports uncertainty instead of inventing a complete-looking execution story.
 
+[Quick Start](#quick-start) · [Example Walkthrough](#example-walkthrough) · [Library Usage](#library-usage) · [Safety and Limits](#safety-and-limits)
+
 ## Why It Exists
 
 Agent runs often emit streaming events, tool calls, child tasks, and governance records at the same time. Raw logs alone make it difficult to answer:
@@ -61,31 +63,97 @@ node bin/agent-trace.js events examples/research.jsonl --run research-run --limi
 
 The bundled example uses synthetic data and includes completed and interrupted runs, replayed events, parent relationships, and unmatched tool calls.
 
+## Example Walkthrough
+
+This diagram is derived from the public [research.jsonl](./examples/research.jsonl) fixture. It shows recorded parent relationships and tool-call ownership. It is an **illustration of a synthetic trace, not an application screenshot or evidence that this toolkit executed a web search**.
+
+```mermaid
+flowchart TB
+    subgraph Research["research-run · producer claims succeeded"]
+        Coordinator["coordinator<br/>task: planning"] -->|parent| Researcher["researcher<br/>task: research"]
+        Researcher -->|calls| SearchOne["web_research · search-1<br/>returned · 30 ms"]
+        Researcher -->|calls| SearchTwo["web_research · search-2<br/>returned · 10 ms"]
+    end
+    subgraph Interrupted["interrupted-run · producer claims interrupted"]
+        Reader["researcher<br/>task: read"] -->|calls| Pending["read_url · read-1<br/>pending · duration unknown"]
+    end
+    classDef agent fill:#E8F2FA,stroke:#5982A3,color:#163247
+    classDef returned fill:#EBF8F1,stroke:#478B65,color:#143827
+    classDef unknown fill:#FFF4DC,stroke:#AA7C2A,color:#533C16
+    class Coordinator,Researcher,Reader agent
+    class SearchOne,SearchTwo returned
+    class Pending unknown
+```
+
+What the example demonstrates:
+
+| What the log contains | What the analysis reports |
+| --- | --- |
+| 15 input records, including one replay of `e07` | 14 accepted events and 1 duplicate copy, without double-counting |
+| `search-2` returns before `search-1` | Correct `callId` pairs with 10 ms and 30 ms durations, not a guess based on return order |
+| An explicit parent agent and task for the researcher | A coordinator → researcher parent edge |
+| A `read_url` call with no result before interruption | The call stays `pending` and the run stays `interrupted`; no result is invented |
+| A completion record with total cost `0.003` | One recorded total, without adding agent costs or interpreting it as a bill |
+| A source with an unknown publication date | A preserved governance warning; a returned result is not verified content |
+
+The Quick Start `summary` command produces this actual terminal excerpt; omitted lines do not change the displayed values:
+
+```text
+Agent Trace Kit
+Events: 14 accepted; 1 duplicate copies; 0 invalid; 0 conflicting identities.
+
+Run interrupted-run | session demo-session | interrupted
+  Recorded run cost: unknown (not a billing total)
+  Tool read_url | task read | call read-1 | pending | none | duration unknown | outcome unknown
+
+Run research-run | session demo-session | succeeded
+  Recorded run cost: 0.003 (not a billing total)
+    Parent: coordinator[planning] -> researcher[research]
+  Tool web_research | task research | call search-1 | returned | call_id | 30 ms | outcome unknown
+  Tool web_research | task research | call search-2 | returned | call_id | 10 ms | outcome unknown
+```
+
+`returned` means a result record exists, not that the search content is correct. The fixture does not explicitly declare tool success, so tool outcomes stay `unknown`. Run-level `succeeded` is also a producer claim, not independent certification of task quality.
+
 ## Library Usage
 
 ```js
 import {
   readTraceFile,
   createTraceIndex,
-  modelForEvents,
-  summarizeTrace,
+  analyzeCollectedTrace,
 } from './src/index.js';
 
 const trace = await readTraceFile('./examples/research.jsonl');
-const model = modelForEvents(trace.events);
+const report = analyzeCollectedTrace(trace);
 
-const index = createTraceIndex(trace.events);
+const index = createTraceIndex(trace);
 const page = index.query(
   { sessionId: 'demo-session', runId: 'research-run' },
   { offset: 0, limit: 100 },
 );
 
-console.log(model.runs);
+console.log(report.runs);
+console.log(report.counts, report.issues);
 console.log(page.events);
-console.log(summarizeTrace(trace.events));
 ```
 
 ESM exports and TypeScript declarations are included.
+
+For a file summary alone, use one entry point:
+
+```js
+import { analyzeTraceFile } from './src/index.js';
+
+const report = await analyzeTraceFile('./examples/research.jsonl', {
+  filter: { runId: 'research-run' },
+});
+console.log(report.filtered, report.selectedEventCount, report.issues);
+```
+
+Passing the complete `trace` preserves original counts, diagnostics, and line/byte locations while reusing validated data. Filtered summaries explicitly describe partial evidence; original ingestion diagnostics remain visible even when problem events are filtered out.
+
+`trace` is a library-owned, read-only batch whose property reads return defensive copies. `trace.evidence` retains original normalized records (including replays and conflicting versions) and source locations; it can contain private data/tool arguments and is not dumped by the CLI. Compose with the batch itself, not a spread/cloned plain object. Raw in-memory records can still use `summarizeTrace(events)`; low-level `modelForEvents` requires already sorted, deduplicated, normalized events.
 
 ## Event Shape
 
@@ -108,11 +176,15 @@ Each JSONL line contains one JSON object:
 
 Required fields are `eventId`, `type`, and `summary`. Event identity is `(workspaceId, sessionId, runId, eventId)`. Conflicting records with the same identity are excluded and reported; neither first-write nor last-write silently wins.
 
+Root fields and supported identity/tool aliases in `data` deduplicate by meaning; canonical events retain only promoted fields. Other extension data and tool arguments still participate in conflict detection. Replays of every conflicting version count as duplicates, independently of input order.
+
 ## Tools, Relationships, and Outcomes
 
 Tool calls are paired only within the same run, task, agent, and tool scope. A unique `callId` is preferred; legacy records without one pair only when a single earlier anonymous call is open. Reused IDs, missing scope, and conflicting tool names remain ambiguous.
 
 Parent edges require one uniquely observed parent in the same run. Missing parents, conflicting claims, and cycles are reported instead of rendered as invented relationships. Outcomes come from explicit completion, failure, interruption, or cancellation events; a run without a terminal event is `incomplete`.
+
+Without `runId`, events form only an unassigned bucket (`scopeStatus: 'unassigned'`): no parent/participation edges or tool pairs, no merged agent instances, and unknown aggregate outcome/cost. Callers who know the real run identity can explicitly supply it on input; random IDs must not substitute for evidence. Contradictory success claims emit `conflicting_outcome`. Conflicting run costs emit `conflicting_run_cost` and produce a `null` total, with candidate amounts retained in `costEvidence`.
 
 A tool result event proves only that the trace contains a result. It does not prove that an external action succeeded or that returned content is correct. Cost is read from explicit fields and never inferred from provider billing, exchange rates, or missing charges.
 

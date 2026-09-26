@@ -18,6 +18,35 @@ const message = (id: string): ChatMessage => ({
 });
 
 describe('durable workspace lifecycle', () => {
+  it('keeps navigation summaries small without removing the session history', async () => {
+    const store = await Store.open(new MemoryPersistence());
+    const workspace = store.listWorkspaces()[0]!;
+    const session = (await store.createSession(workspace.id, '中文会话 🚀'))!;
+    await store.addMessage(workspace.id, session.id, { ...message('large'), content: '私人材料'.repeat(1000),
+      traces: [{ eventId: 'trace', runId: 'run-summary', sessionId: session.id, timestamp: 1,
+        type: 'agent_stage', summary: '内部过程', data: {} }] });
+    const navigation = store.listWorkspaceSummaries()[0]!.sessions[0]!;
+    expect(navigation.title).toContain('私人材料');
+    expect(navigation.messages).toEqual([]);
+    expect(JSON.stringify(navigation)).not.toContain('内部过程');
+    expect(store.getMessages(workspace.id, session.id)[0].content).toContain('私人材料');
+  });
+  it('pages UTF-8 session history without gaps or exposing earlier messages in the recent page', async () => {
+    const store = await Store.open(new MemoryPersistence());
+    const workspaceId = store.listWorkspaces()[0]!.id;
+    const sessionId = (await store.createSession(workspaceId))!.id;
+    for (let index = 0; index < 7; index++) await store.addMessage(workspaceId, sessionId, { ...message(`m-${index}`), content: `中文 🚀 ${index}` });
+    const last = store.getSessionPage(workspaceId, sessionId, 3)!;
+    const middle = store.getSessionPage(workspaceId, sessionId, 3, last.nextBefore!)!;
+    const first = store.getSessionPage(workspaceId, sessionId, 3, middle.nextBefore!)!;
+    expect([first, middle, last].flatMap(page => page.session.messages.map(item => item.content)))
+      .toEqual(Array.from({ length: 7 }, (_, index) => `中文 🚀 ${index}`));
+    expect(first.nextBefore).toBeNull();
+    expect(last.session.messages).toHaveLength(3);
+    expect(() => store.getSessionPage(workspaceId, sessionId, 101)).toThrow(RangeError);
+    expect(() => store.getSessionPage(workspaceId, sessionId, 3, 8)).toThrow(RangeError);
+    expect(store.getSession(workspaceId, sessionId)?.messages).toHaveLength(7);
+  });
   it('restores UTF-8 messages, title, trace and cost from disk after restart', async () => {
     const path = await root();
     const store = await Store.open(new FilePersistence(path));

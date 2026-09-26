@@ -483,6 +483,16 @@ export default function AppPage() {
           followOutput.current = list.scrollHeight - list.clientHeight - list.scrollTop < 100;
         }}>
           {current.loading && messages.length === 0 && <p className={styles.runNotice} role="status">正在读取对话...</p>}
+          {typeof current.historyBefore === 'number' && <button type="button" className={styles.loadHistory}
+            disabled={current.loadingOlder} onClick={async () => {
+              const viewport = messagesViewportRef.current;
+              const height = viewport?.scrollHeight || 0, top = viewport?.scrollTop || 0;
+              followOutput.current = false;
+              await conversations.loadOlder(activeWsId, activeSessId);
+              requestAnimationFrame(() => {
+                if (viewport) viewport.scrollTop = top + viewport.scrollHeight - height;
+              });
+            }}>{current.loadingOlder ? '正在读取...' : '查看更早消息'}</button>}
           {messages.length === 0 && !current.loading && !viewError && (
             <TaskWorkbench workspace={activeWs} entries={entries} disabled={!activeWsId || isRunning || summaryRunning}
               onPrepare={prepareTask} onSelect={switchSession} />

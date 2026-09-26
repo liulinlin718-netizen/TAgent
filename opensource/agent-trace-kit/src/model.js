@@ -1,30 +1,27 @@
-import { collectEvents, compareText, issue, scopeKey } from './events.js';
+import { collectEvents, compareText, eventKey, issue, ownedTrace, scopeKey, TraceInputError } from './events.js';
 import { groupStages, isToolEvent } from './stages.js';
 import { pairTools } from './tools.js';
+import { recordedOutcome } from './outcomes.js';
+import { compileFilter, createEventSelector } from './indexing.js';
 
 const runTerminal = new Set(['complete', 'run_failed', 'run_interrupted', 'run_cancelled']);
 const agentTerminal = new Set(['agent_complete', 'agent_failed', 'agent_cancelled']);
 const agentActivity = new Set(['agent_spawn', 'agent_progress', 'agent_stage', ...agentTerminal]);
 
-function terminalOutcome(event) {
-  if (['run_interrupted', 'run_cancelled', 'agent_cancelled'].includes(event.type)
-    || ['interrupted', 'cancelled'].includes(event.status)) return 'interrupted';
-  if (['run_failed', 'agent_failed'].includes(event.type) || event.data?.success === false || event.status === 'failed') return 'failed';
-  return event.data?.success === true ? 'succeeded' : 'unknown';
-}
-
 function outcome(events, terminalTypes, issues) {
   const terminals = events.filter(event => terminalTypes.has(event.type));
+  const outcomes = new Map(terminals.map(event => [event, recordedOutcome(event, issues)]));
+  if (!events[0]?.runId) return { status: 'unknown', terminalEventIds: terminals.map(event => event.eventId) };
   if (!terminals.length) return { status: 'incomplete', terminalEventIds: [] };
   const dated = terminals.filter(event => event.timestamp !== null);
   const lastTime = dated.length ? Math.max(...dated.map(event => event.timestamp)) : null;
   const latest = terminals.filter(event => event.timestamp === null || event.timestamp === lastTime);
-  const statuses = new Set(latest.map(terminalOutcome));
+  const statuses = new Set(latest.map(event => outcomes.get(event)));
   if (statuses.size > 1) {
     issues.push(issue('ambiguous_terminal', 'warning', 'Terminal events disagree and their order is unknown; success cannot be established.', { eventId: latest[0].eventId }));
     return { status: 'unknown', terminalEventIds: latest.map(event => event.eventId) };
   }
-  return { status: terminalOutcome(latest[0]), terminalEventIds: latest.map(event => event.eventId) };
+  return { status: outcomes.get(latest[0]), terminalEventIds: latest.map(event => event.eventId) };
 }
 
 function timeRange(events) {
@@ -34,7 +31,12 @@ function timeRange(events) {
 }
 
 function scope(event) { return { workspaceId: event.workspaceId ?? null, sessionId: event.sessionId ?? null, runId: event.runId ?? null }; }
-function nodeKey(event) { return JSON.stringify([scopeKey(event), event.agentId, event.taskId ?? null]); }
+function nodeKey(event) {
+  const identity = [scopeKey(event), event.agentId, event.taskId ?? null];
+  // Without a run ID, even repeated agent IDs cannot establish one shared instance.
+  if (!event.runId) identity.push(event.eventId);
+  return JSON.stringify(identity);
+}
 function safeLabel(value, fallback) { return typeof value === 'string' && value.length <= 256 ? value : fallback; }
 
 function buildAgents(events, issues, runKey) {
@@ -62,6 +64,7 @@ function buildAgents(events, issues, runKey) {
       stages: groupStages(related), time: timeRange(activity), parent: parents.length === 1 ? parents[0] : null,
       parentAmbiguous: parents.length > 1 };
   });
+  if (!events[0]?.runId) return { agents, edges: [] };
   const candidates = [], byAgent = new Map(), byTask = new Map(), byIdentity = new Map();
   for (const node of agents) {
     const agent = byAgent.get(node.agentId) || []; agent.push(node); byAgent.set(node.agentId, agent);
@@ -97,17 +100,51 @@ function buildAgents(events, issues, runKey) {
   return { agents, edges };
 }
 
+function runCost(events, terminalIds, issues) {
+  const selected = new Set(terminalIds), values = [], evidence = [];
+  let invalid = false;
+  for (const event of events) {
+    if (!selected.has(event.eventId)) continue;
+    const candidates = [];
+    for (const [field, value] of [['cost', event.cost], ['data.totalCost', event.data?.totalCost]]) {
+      if (value === undefined) continue;
+      evidence.push({ eventId: event.eventId, field, value: typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null });
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+        invalid = true;
+        issues.push(issue('invalid_run_cost', 'warning', 'Recorded total cost is not a nonnegative finite number.',
+          { eventId: event.eventId, runKey: scopeKey(event) }));
+      } else candidates.push(value);
+    }
+    if (new Set(candidates).size > 1) {
+      invalid = true;
+      issues.push(issue('conflicting_run_cost', 'warning', 'Root cost and data.totalCost disagree; recorded run cost is unknown.',
+        { eventId: event.eventId, runKey: scopeKey(event), claims: [{ field: 'cost', value: event.cost }, { field: 'data.totalCost', value: event.data.totalCost }] }));
+    }
+    values.push(candidates[0] ?? null);
+  }
+  if (new Set(values.filter(value => value !== null)).size > 1) {
+    invalid = true;
+    issues.push(issue('conflicting_run_cost', 'warning', 'Incomparable terminal records disagree on total cost; no total was chosen.',
+      { runKey: scopeKey(events[0]) }));
+  }
+  return { recordedRunCost: events[0]?.runId && !invalid && values.length && values.every(value => value === values[0]) ? values[0] : null,
+    costEvidence: evidence };
+}
+
 export function modelForEvents(events) {
   const groups = new Map(), issues = [];
   for (const event of events) { const key = scopeKey(event), group = groups.get(key) || []; group.push(event); groups.set(key, group); }
   const runs = [...groups].sort(([a], [b]) => compareText(a, b)).map(([key, group]) => {
+    if (!group[0].runId) issues.push(issue('unassigned_scope', 'warning',
+      'These events share only an unknown scope bucket, not a confirmed run. No aggregate outcome or relationships were inferred.', { runKey: key }));
+    const issueStart = issues.length;
     const agents = buildAgents(group, issues, key), tools = pairTools(group); issues.push(...tools.issues);
     const runOutcome = outcome(group, runTerminal, issues);
-    const terminalCosts = group.filter(event => runOutcome.terminalEventIds.includes(event.eventId))
-      .map(event => event.cost ?? (typeof event.data?.totalCost === 'number' && Number.isFinite(event.data.totalCost) && event.data.totalCost >= 0 ? event.data.totalCost : null));
-    const cost = terminalCosts.length && terminalCosts.every(value => value === terminalCosts[0]) ? terminalCosts[0] : null;
-    return { key, scope: scope(group[0]), eventIds: group.map(event => event.eventId), outcome: runOutcome,
-      time: timeRange(group), stages: groupStages(group), ...agents, tools: tools.interactions, recordedRunCost: cost,
+    const costs = runCost(group, runOutcome.terminalEventIds, issues);
+    for (let i = issueStart; i < issues.length; i++) issues[i].runKey ??= key;
+    return { key, scope: scope(group[0]), scopeStatus: group[0].runId ? 'identified' : 'unassigned',
+      eventIds: group.map(event => event.eventId), outcome: runOutcome,
+      time: timeRange(group), stages: groupStages(group), ...agents, tools: tools.interactions, ...costs,
       governance: group.filter(event => event.type === 'governance').map(event => ({ eventId: event.eventId,
         agentId: event.agentId ?? null, taskId: event.taskId ?? null, summary: event.summary,
         result: ['passed', 'blocked', 'warning'].includes(event.data?.result) ? event.data.result : 'unknown' })) };
@@ -116,7 +153,24 @@ export function modelForEvents(events) {
 }
 
 export function summarizeTrace(inputs) {
-  const collected = collectEvents(inputs), model = modelForEvents(collected.events);
-  return { version: 1, counts: collected.counts, runs: model.runs, issues: [...collected.issues, ...model.issues],
-    note: 'Outcomes reflect explicit producer records, not independently verified task quality. Missing cost is unknown. JSONL is not tamper-proof audit evidence.' };
+  return analyzeCollectedTrace(collectEvents(inputs));
+}
+
+/** Analyze a library-owned batch without losing ingestion diagnostics or revalidating events. */
+export function analyzeCollectedTrace(trace, filter = {}) {
+  const collected = ownedTrace(trace);
+  if (!collected) throw new TraceInputError('untrusted_batch', 'Use the complete result of collectEvents or readTraceFile; raw events belong in summarizeTrace.');
+  const entries = compileFilter(filter), filtered = entries.length > 0;
+  const events = filtered ? createEventSelector(collected.events).selectEntries(entries).map(position => collected.events[position]) : collected.events;
+  const model = modelForEvents(events), sources = new Map();
+  for (const item of collected.evidence) {
+    if (item.event && !sources.has(eventKey(item.event))) sources.set(eventKey(item.event), item.source);
+  }
+  const diagnostics = model.issues.map(item => {
+    const source = item.eventId && item.runKey ? sources.get(JSON.stringify([item.runKey, item.eventId])) : undefined;
+    return source ? { ...item, ...source } : item;
+  });
+  return { version: 1, counts: structuredClone(collected.counts), runs: model.runs,
+    issues: [...structuredClone(collected.issues), ...diagnostics], filtered, selectedEventCount: events.length,
+    note: `${filtered ? 'Partial evidence: outcomes describe only selected events, not the complete run. ' : ''}Outcomes reflect explicit producer records, not independently verified task quality. Missing cost is unknown. JSONL is not tamper-proof audit evidence.` };
 }

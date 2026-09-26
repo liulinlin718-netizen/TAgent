@@ -1,5 +1,6 @@
 import { lstat, open } from 'node:fs/promises';
-import { LIMITS, TraceInputError, issue, normalizeEvent, collectEvents } from './events.js';
+import { LIMITS, TraceInputError, issue, normalizeEvent, createCollector } from './events.js';
+import { analyzeCollectedTrace } from './model.js';
 
 function bound(value, fallback, maximum, name) {
   value ??= fallback;
@@ -25,20 +26,21 @@ export async function* readJsonl(path, options = {}) {
     function parse(bytes, byteLength) {
       line++;
       const at = offset; offset += byteLength;
+      const location = { line, byteOffset: at, byteLength };
       let text;
       try { text = decoder.decode(bytes); }
       catch {
         if (++records > maxEvents) throw new TraceInputError('event_limit', 'JSONL file exceeds the record limit.');
-        return { line, byteOffset: at, byteLength, event: null, issues: [issue('invalid_utf8', 'error', 'Line is not valid UTF-8.', { line })] };
+        return { ...location, event: null, issues: [issue('invalid_utf8', 'error', 'Line is not valid UTF-8.', location)] };
       }
       if (line === 1 && text.charCodeAt(0) === 0xfeff) text = text.slice(1);
       if (!text.trim()) return null;
       if (++records > maxEvents) throw new TraceInputError('event_limit', 'JSONL file exceeds the record limit.');
       let raw;
       try { raw = JSON.parse(text); }
-      catch { return { line, byteOffset: at, byteLength, event: null, issues: [issue('invalid_json', 'error', 'Line is not a complete JSON value.', { line })] }; }
+      catch { return { ...location, event: null, issues: [issue('invalid_json', 'error', 'Line is not a complete JSON value.', location)] }; }
       const result = normalizeEvent(raw);
-      return { line, byteOffset: at, byteLength, event: result.event, issues: result.issues.map(item => ({ ...item, line })) };
+      return { ...location, event: result.event, issues: result.issues.map(item => ({ ...item, ...location })) };
     }
     while (true) {
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
@@ -67,14 +69,14 @@ export async function* readJsonl(path, options = {}) {
 }
 
 export async function readTraceFile(path, options = {}) {
-  const events = [], sourceIssues = []; let invalid = 0, records = 0;
+  const collector = createCollector();
   for await (const record of readJsonl(path, options)) {
-    records++;
-    sourceIssues.push(...record.issues);
-    if (record.event) events.push(record.event); else invalid++;
+    collector.add(record, { line: record.line, byteOffset: record.byteOffset, byteLength: record.byteLength });
   }
-  const collected = collectEvents(events);
-  // Validation warnings already have file line numbers; retain only new deduplication issues.
-  return { events: collected.events, counts: { ...collected.counts, input: records, invalid },
-    issues: [...sourceIssues, ...collected.issues.filter(item => item.code === 'conflicting_duplicate')] };
+  return collector.finish();
+}
+
+export async function analyzeTraceFile(path, options = {}) {
+  const trace = await readTraceFile(path, options);
+  return analyzeCollectedTrace(trace, options.filter);
 }

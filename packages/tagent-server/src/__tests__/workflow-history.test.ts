@@ -144,9 +144,20 @@ describe('canonical JSONL trace index', () => {
     await recorder.flush(); expect(warning).toHaveBeenCalledTimes(1);
     expect((await s.index.query(s.source(), { limit: 100 })).events).toEqual(s.traces);
   }, 30000);
+  it('batches a short event burst into one derived-index commit without losing order', async () => {
+    const s = await fixture(20), warning = vi.fn();
+    const writes = vi.spyOn(s.index, 'appendMany');
+    const recorder = new WorkflowIndexRecorder(s.index, s.source(), warning);
+    for (const event of s.traces) recorder.record(event);
+    await recorder.flush();
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect(writes.mock.calls[0]?.[1]).toEqual(s.traces);
+    expect(warning).not.toHaveBeenCalled();
+    expect((await s.index.query(s.source(), { limit: 100 })).events).toEqual(s.traces);
+  });
   it('contains background failures and keeps the authoritative task readable', async () => {
     const s = await fixture(2); await fs.mkdir(s.dir); const warning = vi.fn();
-    vi.spyOn(s.index, 'append').mockRejectedValueOnce(new Error('Disk IO failure'));
+    vi.spyOn(s.index, 'appendMany').mockRejectedValueOnce(new Error('Disk IO failure'));
     const recorder = new WorkflowIndexRecorder(s.index, s.source(), warning); recorder.record(s.traces[0]);
     await recorder.flush(); expect(warning).toHaveBeenCalledOnce();
     expect((await s.index.query(s.source())).events).toEqual(s.traces);

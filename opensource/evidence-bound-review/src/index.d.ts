@@ -1,6 +1,22 @@
-export const VERSION: '0.1.0';
-export const RULESET: 'evidence-bound-review/v1';
-export const LIMITS: Readonly<{ textLength: number; totalTextLength: number; materials: number; citations: number; quoteLength: number }>;
+export const VERSION: '0.2.0';
+export const RULESET: 'evidence-bound-review/v2';
+export const LIMITS: Readonly<{ textLength: number; totalTextLength: number; materials: number; citations: number; quoteLength: number;
+  proseStatements: number; subsetRelations: number; findings: number; integerDigits: number }>;
+
+export type ReviewErrorCode = 'invalid_type' | 'invalid_value' | 'unknown_field' | 'duplicate_id' | 'unknown_material'
+  | 'limit_exceeded' | 'quote_not_found' | 'quote_ambiguous' | 'input_not_readable' | 'invalid_json' | 'invalid_utf8' | 'invalid_arguments';
+export class ReviewInputError extends TypeError {
+  constructor(code: ReviewErrorCode, path: string, message: string);
+  code: ReviewErrorCode;
+  /** JSON Pointer into the input; the empty string denotes the root. No OS path or input text. */
+  path: string;
+}
+export interface ReviewErrorEnvelope {
+  schema: 'evidence-bound-review/error-v1';
+  error: { code: ReviewErrorCode | 'internal_error'; path: string; message: string };
+}
+/** Unexpected errors are redacted; recognized input errors retain their safe code/path/message. */
+export function errorEnvelope(error: unknown): ReviewErrorEnvelope;
 
 export interface TextReference {
   quote: string;
@@ -74,6 +90,10 @@ export interface ReviewResult {
     proseStatements: number;
     materialCount: number;
     explicitDateCitations: number;
+    /** Bindings deduplicated by materialId, report range and usage. sources has this length. */
+    uniqueDateCitations: number;
+    /** Distinct materials whose dates were assessed in this call. */
+    assessedDateSources: number;
     skipped: Array<{ rule: string; reason: string }>;
   };
   sources: SourceCheck[];
@@ -81,7 +101,7 @@ export interface ReviewResult {
   limitations: string[];
 }
 
-/** Pure offline check. Throws TypeError on invalid, oversized or ambiguously bound input. */
+/** Pure offline check. Throws ReviewInputError (a TypeError) on invalid, oversized or ambiguously bound input. */
 export function reviewReport(input: ReviewInput): ReviewResult;
 /** Inclusive day window, based only on caller-supplied dates. Does not use the current time. */
 export function dateWindow(asOf: string, days?: number): DateWindow;

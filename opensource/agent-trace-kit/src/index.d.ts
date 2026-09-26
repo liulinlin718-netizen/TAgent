@@ -20,18 +20,28 @@ export interface WorkflowEvent {
   data?: JsonObject;
   agentSnapshot?: JsonObject;
 }
-export interface Diagnostic {
+export interface SourceLocation { inputIndex?: number; line?: number; byteOffset?: number; byteLength?: number }
+export interface Diagnostic extends SourceLocation {
   code: string;
   severity: 'warning' | 'error';
   message: string;
   eventId?: string;
   nodeId?: string;
   runKey?: string;
-  inputIndex?: number;
-  line?: number;
+  relatedSources?: SourceLocation[];
+  claims?: { field: string; value: JsonValue }[];
 }
 export interface TraceCounts { input: number; accepted: number; invalid: number; duplicates: number; conflictingIdentities: number }
-export interface CollectedTrace { events: WorkflowEvent[]; issues: Diagnostic[]; counts: TraceCounts }
+declare const collectedTraceBrand: unique symbol;
+/** Library-owned batch. Each property read returns a defensive copy. Do not spread/clone it for composition. */
+export interface CollectedTrace {
+  readonly [collectedTraceBrand]: true;
+  readonly events: WorkflowEvent[];
+  readonly issues: Diagnostic[];
+  readonly counts: TraceCounts;
+  /** Original normalized records (including replays/conflicts) and source locations. May contain private data. */
+  readonly evidence: { event: WorkflowEvent | null; source: SourceLocation }[];
+}
 export class TraceInputError extends Error { readonly code: string; constructor(code: string, message: string) }
 export const LIMITS: Readonly<{ maxEvents: number; maxFileBytes: number; maxLineBytes: number; maxDepth: number; maxFields: number; maxString: number }>;
 export function normalizeEvent(input: unknown): { event: WorkflowEvent | null; issues: Diagnostic[] };
@@ -77,6 +87,7 @@ export interface Relationship { from: string; to: string; kind: 'parent' | 'part
 export interface RunSummary {
   key: string;
   scope: { workspaceId: string | null; sessionId: string | null; runId: string | null };
+  scopeStatus: 'identified' | 'unassigned';
   eventIds: string[];
   outcome: RecordedOutcome;
   time: TimeRange;
@@ -85,6 +96,7 @@ export interface RunSummary {
   edges: Relationship[];
   tools: ToolInteraction[];
   recordedRunCost: number | null;
+  costEvidence: { eventId: string; field: 'cost' | 'data.totalCost'; value: number | null }[];
   governance: { eventId: string; agentId: string | null; taskId: string | null; summary: string; result: 'passed' | 'blocked' | 'warning' | 'unknown' }[];
 }
 export interface TraceSummary {
@@ -99,6 +111,8 @@ export interface TraceSummary {
 /** Use summarizeTrace for raw records. modelForEvents requires sorted, deduplicated, normalized events. */
 export function modelForEvents(events: readonly WorkflowEvent[]): Pick<TraceSummary, 'runs' | 'issues'>;
 export function summarizeTrace(inputs: Iterable<unknown>): TraceSummary;
+/** Preserves original counts/issues; filtered reports explicitly represent partial evidence. */
+export function analyzeCollectedTrace(trace: CollectedTrace, filter?: TraceFilter): TraceSummary;
 export type TraceFilter = Partial<Pick<WorkflowEvent, 'workspaceId' | 'sessionId' | 'runId' | 'taskId' | 'agentId' | 'type'>>;
 export interface TracePage { events: WorkflowEvent[]; total: number; offset: number; nextOffset: number | null }
 export interface TraceIndex {
@@ -106,9 +120,10 @@ export interface TraceIndex {
   issues: Diagnostic[];
   query(filter?: TraceFilter, options?: { offset?: number; limit?: number }): TracePage;
 }
-export function createTraceIndex(inputs: Iterable<unknown>): TraceIndex;
+export function createTraceIndex(inputs: Iterable<unknown> | CollectedTrace): TraceIndex;
 export interface ReadOptions { maxEvents?: number; maxFileBytes?: number; maxLineBytes?: number }
 export interface JsonlRecord { line: number; byteOffset: number; byteLength: number; event: WorkflowEvent | null; issues: Diagnostic[] }
 export function readJsonl(path: string | URL, options?: ReadOptions): AsyncGenerator<JsonlRecord>;
 export function readTraceFile(path: string | URL, options?: ReadOptions): Promise<CollectedTrace>;
+export function analyzeTraceFile(path: string | URL, options?: ReadOptions & { filter?: TraceFilter }): Promise<TraceSummary>;
 export function formatText(report: TraceSummary): string;

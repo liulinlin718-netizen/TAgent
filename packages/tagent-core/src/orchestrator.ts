@@ -16,6 +16,7 @@
 import type { LLMProvider } from '@tagent/ai';
 import { randomUUID } from 'node:crypto';
 import { CostTracker, ProviderRequestError } from '@tagent/ai';
+import { withRunBudget } from './run-budget.js';
 import { withRunSignal, terminationNotice, runTermination, type RunTermination } from './run-control.js';
 import { runAgentLoop, type AgentLoopResult, type LoopEventHandler } from './agent-loop.js';
 import { ToolRegistry } from './tools/registry.js';
@@ -154,7 +155,7 @@ export async function runOrchestrator(
   events?: OrchestratorEventHandler,
 ): Promise<OrchestratorResult> {
   const { model, signal, maxTotalCost = 1.0, agentPool: externalPool, governanceTemplate = 'standard' } = config;
-  const provider = withRunSignal(config.provider, signal);
+  const provider = withRunBudget(withRunSignal(config.provider, signal), maxTotalCost);
   const officeReview: OfficeReviewProfile = { model: config.officeReview?.model ?? model, reasoning: config.officeReview?.reasoning ?? 'disabled' };
   const conversation = config.conversationContext ? structuredClone(config.conversationContext) : undefined;
   if (conversation && ((config.sessionId && conversation.sessionId !== config.sessionId)

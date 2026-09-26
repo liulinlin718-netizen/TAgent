@@ -1,9 +1,10 @@
 import { compareEvents, compareText, issue, scopeKey } from './events.js';
 import { isToolCall, isToolEvent, isToolResult } from './stages.js';
+import { recordedOutcome } from './outcomes.js';
 
 function outcome(event) {
-  if (event.data?.success === false || event.data?.isError === true || event.status === 'failed') return 'failed';
-  return event.data?.success === true ? 'succeeded' : 'unknown';
+  const status = recordedOutcome(event);
+  return status === 'interrupted' ? 'unknown' : status;
 }
 
 function unmatched(event, state) {
@@ -29,6 +30,7 @@ function matched(call, result, correlation, issues) {
 export function pairTools(events) {
   const explicit = new Map(), legacy = new Map(), interactions = [], issues = [];
   for (const event of events.filter(isToolEvent)) {
+    if (isToolResult(event)) recordedOutcome(event, issues);
     if (!event.runId || !event.agentId || !event.toolName || (!event.callId && !event.taskId)) {
       interactions.push(unmatched(event, isToolCall(event) ? 'pending' : 'orphan_result'));
       issues.push(issue('unscoped_tool_event', 'warning', 'Tool correlation requires runId, agentId, toolName and either callId or taskId.', { eventId: event.eventId }));

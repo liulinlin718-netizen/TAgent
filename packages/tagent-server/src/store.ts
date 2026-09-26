@@ -26,6 +26,13 @@ export interface Workspace {
   residentAgents: string[];
 }
 
+export type NavigationWorkspace = Omit<Workspace, 'sessions'> & {
+  sessions: Array<Omit<Session, 'messages' | 'summaryForks'> & {
+    messages: [];
+    summaryForks?: Array<Pick<SummaryForkRecord, 'status'>>;
+  }>;
+};
+
 /**
  * Session 数据模型
  *
@@ -347,6 +354,19 @@ export class Store {
     );
   }
 
+  listWorkspaceSummaries(): NavigationWorkspace[] {
+    return Array.from(this.workspaces.values(), workspace => ({
+      id: workspace.id, name: workspace.name, description: workspace.description,
+      createdAt: workspace.createdAt, updatedAt: workspace.updatedAt,
+      residentAgents: [...workspace.residentAgents],
+      sessions: workspace.sessions.map(session => {
+        const { messages: _messages, summaryForks, scheduleOrigin: _scheduleOrigin, ...metadata } = session;
+        return { ...metadata, messages: [] as [],
+          ...(summaryForks ? { summaryForks: summaryForks.map(item => ({ status: item.status })) } : {}) };
+      }).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
+    })).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }
+
   private deleteWorkspaceDraft(id: string): boolean {
     if (this.workspaces.get(id)?.sessions.some(sessionIsBusy)) {
       throw new ActiveRunError();
@@ -386,6 +406,17 @@ export class Store {
   getSession(workspaceId: string, sessionId: string): Session | undefined {
     const ws = this.workspaces.get(workspaceId);
     return structuredClone(ws?.sessions.find(s => s.id === sessionId));
+  }
+
+  getSessionPage(workspaceId: string, sessionId: string, limit: number, before?: number): { session: Session; nextBefore: number | null } | undefined {
+    const session = this.workspaces.get(workspaceId)?.sessions.find(item => item.id === sessionId);
+    if (!session) return undefined;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100
+      || (before !== undefined && (!Number.isSafeInteger(before) || before < 0 || before > session.messages.length))) {
+      throw new RangeError('Invalid session page cursor or limit');
+    }
+    const end = before ?? session.messages.length, start = Math.max(0, end - limit);
+    return { session: structuredClone({ ...session, messages: session.messages.slice(start, end) }), nextBefore: start || null };
   }
 
   private forkSessionDraft(

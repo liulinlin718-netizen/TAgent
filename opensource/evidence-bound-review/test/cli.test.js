@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { formatText } from '../src/cli.js';
-import { reviewReport } from '../src/index.js';
+import { reviewReport, VERSION } from '../src/index.js';
 
 const cli = fileURLToPath(new URL('../src/cli.js', import.meta.url));
 const run = (args, input) => spawnSync(process.execPath, [cli, ...args], { input, encoding: 'utf8', timeout: 10000, windowsHide: true, maxBuffer: 2 * 1024 * 1024 });
@@ -30,17 +30,53 @@ test('source fixture is offline and reports an old-as-recent citation', () => {
 });
 
 test('malformed JSON, bad UTF-8, unsafe schema and oversized input fail with exit 2 without echoing the document', () => {
-  for (const value of ['{"secret-test-value":', Buffer.from([0xc3, 0x28]), JSON.stringify({ ...input, unexpected: 'secret-test-value' }), 'x'.repeat(1024 * 1024 + 1)]) {
+  for (const [value, code] of [
+    ['{"secret-test-value":', 'invalid_json'],
+    [Buffer.from([0xc3, 0x28]), 'invalid_utf8'],
+    [JSON.stringify({ ...input, unexpected: 'secret-test-value' }), 'unknown_field'],
+    ['x'.repeat(1024 * 1024 + 1), 'limit_exceeded'],
+  ]) {
     const result = run(['-', '--json'], value);
     assert.equal(result.status, 2); assert.equal(result.stdout, ''); assert.doesNotMatch(result.stderr, /secret-test-value/);
+    const envelope = JSON.parse(result.stderr);
+    assert.equal(envelope.schema, 'evidence-bound-review/error-v1');
+    assert.equal(envelope.error.code, code);
+    assert.equal(envelope.error.path, '');
   }
+});
+
+test('unreadable file and invalid options return structured errors without echoing paths or arguments', () => {
+  for (const [args, code] of [
+    [[fileURLToPath(new URL('../absent-private-file/input.json', import.meta.url)), '--json'], 'input_not_readable'],
+    [['--private-secret', '--json'], 'invalid_arguments'],
+  ]) {
+    const result = run(args);
+    assert.equal(result.status, 2);
+    assert.equal(result.stdout, '');
+    assert.equal(JSON.parse(result.stderr).error.code, code);
+    assert.doesNotMatch(result.stderr, /absent-private-file|private-secret|[A-Z]:\\/);
+  }
+});
+
+test('library input error paths survive the CLI JSON envelope', () => {
+  const bad = { ...input, materials: [
+    { id: 'a', text: '材料。' },
+    { id: 'b', text: '材料。', source: { basis: 'publication', dateQuote: 'private-date' } },
+  ] };
+  const result = run(['-', '--json'], JSON.stringify(bad));
+  assert.equal(result.status, 2);
+  assert.equal(result.stdout, '');
+  const envelope = JSON.parse(result.stderr);
+  assert.equal(envelope.error.code, 'quote_not_found');
+  assert.equal(envelope.error.path, '/materials/1/source/dateQuote');
+  assert.doesNotMatch(result.stderr, /private-date/);
 });
 
 test('unknown options fail; help and version need no input', () => {
   assert.equal(run(['--execute']).status, 2);
   assert.equal(run(['--json', '--json']).status, 2);
   assert.match(run(['--help']).stdout, /Exit 0/);
-  assert.match(run(['--version']).stdout, /^0\.1\.0/);
+  assert.equal(run(['--version']).stdout.trim(), VERSION);
 });
 
 test('text diagnostics do not echo terminal escape or bidi controls from evidence', () => {

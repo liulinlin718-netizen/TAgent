@@ -106,6 +106,19 @@ describe('Agent Loop elapsed budget', () => {
     expect(result.output).toBe('Complete answer');
     expect(call).toHaveBeenCalledTimes(1);
   });
+  it('does not call the model when the task budget is already exhausted', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'tagent-loop-no-budget-'));
+    directories.push(root);
+    const call = vi.fn<LLMProvider['call']>().mockResolvedValue(response('Should not run'));
+    const result = await runAgentLoop({ id: 'document', name: 'Document', systemPrompt: 'Write',
+      model: 'test', provider: { name: 'test', call, stream: async function* () {} },
+      tools: new ToolRegistry(), traceWriter: new TraceWriter(join(root, 'trace.jsonl')),
+      costTracker: new CostTracker(), maxCostPerTask: 0,
+    }, 'Write a summary');
+    expect(call).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.output).toContain('预算已用尽');
+  });
 
   it.each(['model_error', 'limit_error', 'limit_empty'])('retains tool evidence without claiming success after %s', async failure => {
     const root = mkdtempSync(join(tmpdir(), 'tagent-loop-failure-'));

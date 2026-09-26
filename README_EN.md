@@ -14,6 +14,24 @@ TAgent is not a collection of prompts hidden behind a chat box. Its purpose is t
 - Skill and MCP discovery, preview, risk review, saving, and execution authorization are separate operations.
 - Failures, cancellation, and insufficient budget preserve completed material and return a readable outcome instead of pretending success.
 
+## Interface Tour
+
+### From a Task to a Readable Deliverable
+
+The left column holds office agents and conversations, the center presents the structured result, and the right column shows the stages of the same run. The workflow panel can be collapsed or resized without covering the conversation.
+
+![TAgent workspace with three columns, a structured revenue brief, and grouped workflow stages](./docs/media/workspace.png)
+
+*Actual application UI with synthetic revenue data. No model calls, web research, or tool execution were performed for this screenshot; it is a UI demonstration, not a real-task quality evaluation.*
+
+### Understand and Configure Agent Capabilities
+
+The Agent Hall brings roles, execution stages, tools, quality rules, and radar scores together. The searchable Skills library supports drag-and-drop binding, so users do not need to design an agent from scratch.
+
+![TAgent Agent Hall with resident roles, runtime stages, capability radar charts, and the Skills binding library](./docs/media/agent-hall.png)
+
+*The image shows built-in roles and static configuration estimates, not external benchmark rankings. See [media notes](./docs/media/README.md) for provenance and reproduction.*
+
 ## Core Capabilities
 
 ### Specialized Office Agents

@@ -1,3 +1,5 @@
+import { fail } from './errors.js';
+
 export function isCalendarDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000')) return false;
   const date = new Date(`${value}T00:00:00Z`);
@@ -6,10 +8,14 @@ export function isCalendarDate(value) {
 
 /** Inclusive calendar window; 1 means the as-of day only, 30 includes that day plus 29 prior days. */
 export function dateWindow(asOf, days = 30) {
-  if (!isCalendarDate(asOf)) throw new TypeError('asOf must be a real YYYY-MM-DD calendar date.');
-  if (!Number.isInteger(days) || days < 1 || days > 366) throw new TypeError('days must be an integer from 1 to 366.');
+  return checkedDateWindow(asOf, days, '');
+}
+
+export function checkedDateWindow(asOf, days = 30, path = '/temporal') {
+  if (!isCalendarDate(asOf)) fail('invalid_value', `${path}/asOf`, 'asOf must be a real YYYY-MM-DD calendar date.');
+  if (!Number.isInteger(days) || days < 1 || days > 366) fail('invalid_value', `${path}/days`, 'days must be an integer from 1 to 366.');
   const start = new Date(Date.parse(`${asOf}T00:00:00Z`) - (days - 1) * 86400000).toISOString().slice(0, 10);
-  if (!isCalendarDate(start)) throw new TypeError('The requested window is outside supported calendar dates.');
+  if (!isCalendarDate(start)) fail('invalid_value', path, 'The requested window is outside supported calendar dates.');
   return { start, end: asOf, days };
 }
 

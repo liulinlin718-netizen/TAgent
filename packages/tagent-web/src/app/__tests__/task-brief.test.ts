@@ -8,7 +8,7 @@ const session = (id: string, updatedAt = '2026-09-14T00:00:00Z'): Session => ({ 
 const response = (data: unknown) => new Response(JSON.stringify(data), { headers: { 'content-type': 'application/json' } });
 async function fixture() {
   const sessions = [session('a'), session('b')];
-  const request = vi.fn(async (url: string) => url.endsWith('/api/workspaces')
+  const request = vi.fn(async (url: string) => new URL(url).pathname === '/api/workspaces'
     ? response({ workspaces: [{ id: 'ws', name: '验收', description: '', residentAgents: [], sessions }] })
     : response(sessions.find(item => url.endsWith(`/${item.id}`))));
   const store = createConversationStore(request, 'http://fixture');

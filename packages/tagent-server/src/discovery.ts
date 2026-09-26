@@ -9,6 +9,7 @@ type SearchContext = {
   query: string;
   skillsRegistry: SkillsRegistry;
   mcpRegistry: MCPRegistry;
+  signal?: AbortSignal;
 };
 
 const githubToken = () => process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
@@ -250,8 +251,9 @@ export async function runDiscoverySearch(context: SearchContext): Promise<Discov
   const statuses: DiscoveryProviderStatus[] = [];
   const errors: string[] = [];
   const candidates: DiscoverySearchResult[] = [];
+  const signal = context.signal ? AbortSignal.any([context.signal, AbortSignal.timeout(9000)]) : AbortSignal.timeout(9000);
   let repositorySearch: Promise<ProviderResult> | undefined;
-  const repositories = () => repositorySearch ||= searchGithubRepositories(context.domain, query);
+  const repositories = () => repositorySearch ||= searchGithubRepositories(context.domain, query, signal);
 
   async function collect(providerId: string, search: () => Promise<DiscoverySearchResult[] | ProviderResult>) {
     const provider = providers.find(item => item.id === providerId);
@@ -287,18 +289,26 @@ export async function runDiscoverySearch(context: SearchContext): Promise<Discov
   await collect('local', () => searchLocal(context));
   await collect('url', () => searchDirectCandidate(context.domain, query));
   await collect('curated', () => searchCuratedSources(context.domain, query));
-  await collect('github-repo', repositories);
-  await collect('github-code', () => searchGithubCode(context.domain, query));
-
+  const jobs: Array<{ id: string; search: () => Promise<DiscoverySearchResult[] | ProviderResult> }> = [
+    { id: 'github-repo', search: repositories },
+    { id: 'github-code', search: () => searchGithubCode(context.domain, query, signal) },
+  ];
   if (context.domain === 'mcp') {
-    await collect('npm', () => searchNpmPackages(query));
-    await collect('mcp-registry', () => searchMcpRegistry(query));
-    await collect('mcp-reference', async () => {
+    jobs.push({ id: 'npm', search: () => searchNpmPackages(query, signal) });
+    jobs.push({ id: 'mcp-registry', search: () => searchMcpRegistry(query, signal) });
+    jobs.push({ id: 'mcp-reference', search: async () => {
       const result = await repositories();
       return { ...result, candidates: result.candidates.filter(item => item.url === 'https://github.com/modelcontextprotocol/servers')
         .map(item => ({ ...item, source: 'mcp-reference', providerId: 'mcp-reference' })) };
-    });
+    } });
   }
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(3, jobs.length) }, async () => {
+    while (next < jobs.length) {
+      const job = jobs[next++];
+      await collect(job.id, job.search);
+    }
+  }));
 
   const deduped = dedupeCandidates(candidates);
   return {
@@ -423,11 +433,11 @@ async function searchCuratedSources(domain: DiscoveryDomain, query: string): Pro
     .map(({ domains: _domains, keywords: _keywords, ...source }) => source);
 }
 
-async function searchGithubRepositories(domain: DiscoveryDomain, query: string): Promise<ProviderResult> {
+async function searchGithubRepositories(domain: DiscoveryDomain, query: string, signal?: AbortSignal): Promise<ProviderResult> {
   const url = new URL('https://api.github.com/search/repositories');
   url.searchParams.set('q', `${query} ${domain === 'skill' ? 'skill' : 'mcp'} in:name,description,readme`);
   url.searchParams.set('per_page', '12');
-  const result = await githubClient.get<{ items?: Array<Record<string, unknown>> }>(url.pathname + url.search, { signal: AbortSignal.timeout(12000) });
+  const result = await githubClient.get<{ items?: Array<Record<string, unknown>> }>(url.pathname + url.search, { signal });
   if (!Array.isArray(result.data?.items)) throw new GitHubRequestError('GitHub 搜索返回格式无效。', 'invalid_response');
   return { cache: result.cache, checkedAt: result.fetchedAt, candidates: result.data.items.slice(0, 8).map(item => ({
     source: 'github', providerId: 'github-repo', name: String(item.full_name || item.name || ''),
@@ -436,7 +446,7 @@ async function searchGithubRepositories(domain: DiscoveryDomain, query: string):
   })) };
 }
 
-async function searchGithubCode(domain: DiscoveryDomain, query: string): Promise<ProviderResult> {
+async function searchGithubCode(domain: DiscoveryDomain, query: string, signal?: AbortSignal): Promise<ProviderResult> {
   const filenames = domain === 'skill' ? ['SKILL.md', 'skill.json', 'skills.json'] : ['server.json', 'mcp.json', 'package.json'];
   const candidates: DiscoverySearchResult[] = [];
   const caches: DiscoveryProviderStatus['cache'][] = [];
@@ -446,7 +456,7 @@ async function searchGithubCode(domain: DiscoveryDomain, query: string): Promise
     // REST filename qualifiers are separate queries; these reads share the bounded GitHub queue/cache.
     url.searchParams.set('q', `${query} filename:${filename}`);
     url.searchParams.set('per_page', '4');
-    const result = await githubClient.get<{ items?: Array<Record<string, unknown> & { repository?: Record<string, unknown> }> }>(url.pathname + url.search, { signal: AbortSignal.timeout(12000) });
+    const result = await githubClient.get<{ items?: Array<Record<string, unknown> & { repository?: Record<string, unknown> }> }>(url.pathname + url.search, { signal });
     if (!Array.isArray(result.data?.items)) throw new GitHubRequestError('GitHub 代码搜索返回格式无效。', 'invalid_response');
     caches.push(result.cache); checked.push(result.fetchedAt);
     candidates.push(...result.data.items.map(item => ({
@@ -459,14 +469,14 @@ async function searchGithubCode(domain: DiscoveryDomain, query: string): Promise
   return { candidates, cache: caches.includes('network') ? 'network' : caches.includes('revalidated') ? 'revalidated' : 'memory', checkedAt: Math.min(...checked) };
 }
 
-async function searchNpmPackages(query: string): Promise<DiscoverySearchResult[]> {
+async function searchNpmPackages(query: string, signal?: AbortSignal): Promise<DiscoverySearchResult[]> {
   const url = new URL('https://registry.npmjs.org/-/v1/search');
   url.searchParams.set('text', `${query} keywords:mcp,model-context-protocol`);
   url.searchParams.set('size', '32');
   url.searchParams.set('popularity', '0');
   url.searchParams.set('quality', '0.5');
   url.searchParams.set('maintenance', '0.5');
-  const response = await fetchWithTimeout(url, { headers: { 'User-Agent': 'TAgent Discovery/0.3' } });
+  const response = await fetchWithTimeout(url, { headers: { 'User-Agent': 'TAgent Discovery/0.3' }, signal });
   if (!response.ok) throw new Error(`npm HTTP ${response.status}`);
   const data = await response.json() as { objects?: Array<{ package?: Record<string, unknown> }> };
   if (!Array.isArray(data.objects)) throw new Error('npm 返回格式无效。');
@@ -489,13 +499,14 @@ async function searchNpmPackages(query: string): Promise<DiscoverySearchResult[]
     }));
 }
 
-async function searchMcpRegistry(query: string): Promise<DiscoverySearchResult[]> {
+async function searchMcpRegistry(query: string, signal?: AbortSignal): Promise<DiscoverySearchResult[]> {
   const url = new URL('https://registry.modelcontextprotocol.io/v0.1/servers');
   url.searchParams.set('search', query);
   url.searchParams.set('version', 'latest');
   url.searchParams.set('limit', '8');
   const response = await fetchWithTimeout(url, {
     headers: { 'User-Agent': 'TAgent Discovery/0.2', Accept: 'application/json' },
+    signal,
   });
   if (!response.ok) throw new Error(`MCP Registry HTTP ${response.status}`);
   const data = await response.json() as { servers?: Array<{ server?: Record<string, unknown>; _meta?: Record<string, { status?: unknown; updatedAt?: unknown }> }> };
@@ -520,7 +531,7 @@ async function searchMcpRegistry(query: string): Promise<DiscoverySearchResult[]
 async function fetchWithTimeout(input: string | URL, init: RequestInit = {}): Promise<Response> {
   return fetch(input, {
     ...init,
-    signal: AbortSignal.timeout(8000),
+    signal: init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000),
   });
 }
 

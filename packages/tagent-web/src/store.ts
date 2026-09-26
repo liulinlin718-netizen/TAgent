@@ -97,7 +97,7 @@ export const useTAgentStore = create<TAgentStore>((set, get) => ({
   setActiveWsId: (id) => set({ activeWsId: id }),
   fetchWorkspaces: async () => {
     try {
-      const res = await fetch(`${API}/api/workspaces`);
+      const res = await fetch(`${API}/api/workspaces?view=navigation`);
       const data = await res.json();
       set({ workspaces: data.workspaces || [] });
       if (!get().activeWsId && data.workspaces?.length > 0) {
@@ -112,7 +112,7 @@ export const useTAgentStore = create<TAgentStore>((set, get) => ({
   setActiveSessionId: (id) => set({ activeSessionId: id }),
   fetchSessions: async (wsId) => {
     try {
-      const res = await fetch(`${API}/api/workspaces/${wsId}/sessions`);
+      const res = await fetch(`${API}/api/workspaces/${wsId}/sessions?view=navigation`);
       const data = await res.json();
       set({ sessions: data.sessions || [] });
     } catch { /* server not ready */ }

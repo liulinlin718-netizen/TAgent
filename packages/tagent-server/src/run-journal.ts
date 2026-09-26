@@ -32,7 +32,8 @@ async function discard(persistence: PersistenceAdapter, runId: string) {
 // before handing control back to the loop; synchronous tool events have a small crash window.
 export class RunJournal {
   private state: RunCheckpoint;
-  private pending: Promise<void> = Promise.resolve();
+  private pending?: Promise<void>;
+  private dirty = false;
   private failure?: unknown;
 
   constructor(private persistence: PersistenceAdapter, runId: string, workspaceId: string,
@@ -43,13 +44,27 @@ export class RunJournal {
 
   checkpoint(): Promise<void> {
     this.state.savedAt = new Date().toISOString();
-    const snapshot = structuredClone(this.state);
-    const operation = this.pending.catch(() => {}).then(() => this.persistence.save(checkpointKey(snapshot.runId), snapshot));
-    this.pending = operation;
-    void operation.catch(error => {
+    this.dirty = true;
+    if (!this.pending) {
+      this.pending = this.drain();
+      void this.pending.catch(() => {});
+    }
+    return this.pending;
+  }
+
+  private async drain(): Promise<void> {
+    try {
+      while (this.dirty) {
+        this.dirty = false;
+        const snapshot = structuredClone(this.state);
+        await this.persistence.save(checkpointKey(snapshot.runId), snapshot);
+      }
+    } catch (error) {
       if (!this.failure) { this.failure = error; this.onFailure(); }
-    });
-    return operation;
+      throw error;
+    } finally {
+      this.pending = undefined;
+    }
   }
 
   async flush() {
@@ -59,7 +74,7 @@ export class RunJournal {
 
   setSources(sources: ResearchSource[]) {
     this.state.sources = structuredClone(sources);
-    void this.checkpoint();
+    void this.checkpoint().catch(() => {});
   }
 
   addArtifact(agentId: string, output: string, taskId?: string) {
@@ -67,7 +82,7 @@ export class RunJournal {
     const artifact = { agentId, taskId, output };
     if (previous >= 0) this.state.artifacts[previous] = artifact;
     else this.state.artifacts.push(artifact);
-    void this.checkpoint();
+    void this.checkpoint().catch(() => {});
   }
 
   setDraft(draft: string) { this.state.draft = draft; }
@@ -139,7 +154,7 @@ export class RunJournal {
   }
 
   async discard() {
-    await this.pending.catch(() => {});
+    await this.pending?.catch(() => {});
     await discard(this.persistence, this.state.runId);
   }
 }

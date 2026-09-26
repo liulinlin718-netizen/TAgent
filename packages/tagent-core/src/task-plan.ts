@@ -53,21 +53,32 @@ export function normalizeTaskPlan(value: unknown, originalTask: string): SubTask
 /** Independent tasks run concurrently; handoffs cannot race their required input. */
 export async function executeTaskPlan<T>(tasks: SubTask[], execute: (task: SubTask, dependencies: T[]) => Promise<T>, signal?: AbortSignal): Promise<Map<string, T>> {
   const results = new Map<string, T>();
+  const started = new Set<string>();
+  const running = new Map<string, Promise<{ id: string; result?: T; error?: unknown; failed: boolean }>>();
   while (results.size < tasks.length) {
-    const ready = tasks.filter(task => !results.has(task.id) && (task.dependsOn || []).every(id => results.has(id)));
-    if (!ready.length) throw new Error('Task dependency cycle or missing dependency');
-    for (let offset = 0; offset < ready.length; offset += 3) {
-      signal?.throwIfAborted();
-      const batch = await Promise.allSettled(ready.slice(offset, offset + 3).map(async task => {
-        signal?.throwIfAborted();
-        return { id: task.id, result: await execute(task, (task.dependsOn || []).map(id => results.get(id)!)) };
-      }));
-      // Wait for every running sibling to clean up before propagating a failure or cancellation.
-      for (const item of batch) if (item.status === 'fulfilled') results.set(item.value.id, item.value.result);
-      signal?.throwIfAborted();
-      const failed = batch.find(item => item.status === 'rejected');
-      if (failed?.status === 'rejected') throw failed.reason;
+    if (signal?.aborted) {
+      await Promise.all(running.values());
+      signal.throwIfAborted();
     }
+    for (const task of tasks) {
+      if (running.size >= 3) break;
+      if (started.has(task.id) || !(task.dependsOn || []).every(id => results.has(id))) continue;
+      started.add(task.id);
+      running.set(task.id, (async () => {
+        try { return { id: task.id, result: await execute(task, (task.dependsOn || []).map(id => results.get(id)!)), failed: false }; }
+        catch (error) { return { id: task.id, error, failed: true }; }
+      })());
+    }
+    if (!running.size) throw new Error('Task dependency cycle or missing dependency');
+    const finished = await Promise.race(running.values());
+    running.delete(finished.id);
+    if (finished.failed) {
+      // In-flight siblings settle before failure propagates, preserving their cleanup and receipts.
+      await Promise.all(running.values());
+      throw finished.error;
+    }
+    results.set(finished.id, finished.result as T);
   }
+  signal?.throwIfAborted();
   return results;
 }

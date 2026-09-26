@@ -26,7 +26,7 @@ export interface Session {
   scheduleOrigin?: { occurrenceId: string; jobId: string; dueAt: number; taskMessage: string };
   id: string; title: string; creationType: string; parentSessionId: string | null;
   messages: ChatMessage[]; totalCost: number; updatedAt: string;
-  summaryForks?: SummaryForkRecord[];
+  summaryForks?: Array<Pick<SummaryForkRecord, 'status'>>;
 }
 export interface Workspace {
   id: string; name: string; description: string; sessions: Session[]; residentAgents: string[];
@@ -38,6 +38,7 @@ export interface ConversationRun {
 export interface ConversationEntry {
   messages: ChatMessage[]; draft: string; revision: number;
   loading: boolean; error: string; run?: ConversationRun;
+  historyBefore?: number | null; loadingOlder?: boolean;
 }
 interface ConversationState {
   workspaces: Workspace[]; activeWsId: string; activeSessId: string;
@@ -130,7 +131,7 @@ export function createConversationStore(request = apiFetch, base = API_BASE) {
   }
   function latestSession(workspaceId: string, session: Session): Session {
     const cached = store.getState().workspaces.find(ws => ws.id === workspaceId)?.sessions.find(item => item.id === session.id);
-    return cached && Date.parse(cached.updatedAt) > Date.parse(session.updatedAt) ? cached : session;
+    return cached && Date.parse(cached.updatedAt) >= Date.parse(session.updatedAt) ? cached : session;
   }
   function upsert(workspaceId: string, session: Session) {
     session = latestSession(workspaceId, session);
@@ -142,7 +143,7 @@ export function createConversationStore(request = apiFetch, base = API_BASE) {
   async function refreshWorkspaces() {
     const generation = epoch, read = ++workspaceRead;
     try {
-      const data = await json<{ workspaces: Workspace[] }>('/api/workspaces');
+      const data = await json<{ workspaces: Workspace[] }>('/api/workspaces?view=navigation');
       if (generation !== epoch || read !== workspaceRead) return;
       const workspaces = data.workspaces.map(ws => ({ ...ws, name: readable(ws.name, '工作空间'),
         sessions: (ws.sessions || []).map(session => latestSession(ws.id, normalizeSession(session))) }));
@@ -158,19 +159,28 @@ export function createConversationStore(request = apiFetch, base = API_BASE) {
     reads.set(key, read);
     update(key, previous => ({ ...previous, loading: true, error: '' }));
     try {
-      const path = `/api/workspaces/${workspaceId}/sessions/${sessionId}`;
-      let session = normalizeSession(await json<Session>(path));
+      const path = `/api/workspaces/${workspaceId}/sessions/${sessionId}?view=recent&limit=40`;
+      const readPage = async () => {
+        const data = await json<{ session: Session; nextBefore: number | null } | Session>(path);
+        return 'session' in data ? { session: normalizeSession(data.session), nextBefore: data.nextBefore }
+          : { session: normalizeSession(data), nextBefore: null };
+      };
+      let { session, nextBefore } = await readPage();
       if (generation !== epoch || reads.get(key) !== read) return;
-      session = latestSession(workspaceId, session);
+      const cached = store.getState().workspaces.find(ws => ws.id === workspaceId)?.sessions.find(item => item.id === sessionId);
+      if (cached && Date.parse(cached.updatedAt) > Date.parse(session.updatedAt)) {
+        if (cached.messages.length) { session = cached; nextBefore = null; }
+        else ({ session, nextBefore } = await readPage());
+      }
+      if (generation !== epoch || reads.get(key) !== read) return;
       const pending = session.messages.findLast(message => message.run?.status === 'running');
       let saveFailed = false;
       if (pending && !(entry(key).run && controllers.has(entry(key).run!.clientId))) {
         const status = await json<{ status: string; persisted?: boolean }>(`/api/runs/${pending.run!.id}`);
         saveFailed = status.status === 'finished' && status.persisted === false;
-        if (status.status === 'finished' && !saveFailed) session = normalizeSession(await json<Session>(path));
+        if (status.status === 'finished' && !saveFailed) ({ session, nextBefore } = await readPage());
       }
       if (generation !== epoch || reads.get(key) !== read) return;
-      session = latestSession(workspaceId, session);
       upsert(workspaceId, session);
       update(key, previous => {
         if (previous.revision !== revision || (previous.run && controllers.has(previous.run.clientId))) {
@@ -178,9 +188,12 @@ export function createConversationStore(request = apiFetch, base = API_BASE) {
         }
         const pending = session.messages.findLast(message => message.run?.status === 'running');
         const localRun = previous.run?.runId ? session.messages.find(message => message.run?.id === previous.run?.runId) : undefined;
+        const overlap = previous.messages.findIndex(message => message.id === session.messages[0]?.id);
+        const retained = overlap > 0 ? previous.messages.slice(0, overlap).filter(message => message.persisted !== false) : [];
         return { ...previous, loading: false,
           error: saveFailed ? '任务已结束，但结果保存失败。请保留原页面内容，检查存储后重试读取或重启恢复。' : '', revision: previous.revision + 1,
-          messages: reconcileMessages(session.messages, previous.messages),
+          messages: reconcileMessages([...retained, ...session.messages], previous.messages),
+          historyBefore: retained.length ? previous.historyBefore : nextBefore,
           run: pending ? { clientId: `remote:${pending.run!.id}`, runId: pending.run!.id,
             phase: saveFailed ? 'finished' : 'running', ...(saveFailed ? { persisted: false } : {}) }
             : previous.run ? { ...previous.run, phase: 'finished',
@@ -189,6 +202,26 @@ export function createConversationStore(request = apiFetch, base = API_BASE) {
     } catch (error) {
       if (generation === epoch && reads.get(key) === read) update(key, previous => ({ ...previous, loading: false,
         error: `会话读取失败：${error instanceof Error ? error.message : String(error)}` }));
+    }
+  }
+  async function loadOlder(workspaceId: string, sessionId: string) {
+    const key = conversationKey(workspaceId, sessionId), before = entry(key).historyBefore, generation = epoch;
+    if (typeof before !== 'number' || entry(key).loadingOlder) return;
+    const read = reads.get(key);
+    update(key, previous => ({ ...previous, loadingOlder: true }));
+    try {
+      const page = await json<{ session: Session; nextBefore: number | null }>(
+        `/api/workspaces/${workspaceId}/sessions/${sessionId}?view=recent&limit=40&before=${before}`);
+      if (generation !== epoch || reads.get(key) !== read || entry(key).historyBefore !== before) return;
+      const older = normalizeSession(page.session).messages;
+      update(key, previous => {
+        const seen = new Set(previous.messages.map(message => message.id));
+        return { ...previous, loadingOlder: false, historyBefore: page.nextBefore,
+          messages: [...older.filter(message => !seen.has(message.id)), ...previous.messages] };
+      });
+    } catch (error) {
+      if (generation === epoch) update(key, previous => ({ ...previous, loadingOlder: false,
+        error: `历史消息读取失败：${error instanceof Error ? error.message : String(error)}` }));
     }
   }
   function selectWorkspace(workspaceId: string) {
@@ -349,7 +382,7 @@ export function createConversationStore(request = apiFetch, base = API_BASE) {
     }
   }
   return Object.assign(store, {
-    refreshWorkspaces, refreshSession, selectWorkspace, selectSession, createWorkspace, createSession, deleteSession, send, stop, json,
+    refreshWorkspaces, refreshSession, loadOlder, selectWorkspace, selectSession, createWorkspace, createSession, deleteSession, send, stop, json,
     hasLocalRun: (clientId: string) => controllers.has(clientId),
     setDraft(workspaceId: string, sessionId: string, draft: string) {
       update(conversationKey(workspaceId, sessionId), previous => ({ ...previous, draft }));

@@ -41,6 +41,29 @@ function finalMessage(store: Store, sessionId: string): ChatMessage {
 }
 
 describe('run crash recovery', () => {
+  it('coalesces burst progress checkpoints while retaining the last complete state', async () => {
+    const { persistence, journal, traces } = await setup();
+    const originalSave = persistence.save.bind(persistence);
+    let release!: () => void;
+    const paused = new Promise<void>(resolve => { release = resolve; });
+    const save = vi.spyOn(persistence, 'save').mockImplementation(async (key, data) => {
+      if (save.mock.calls.length === 1) await paused;
+      return originalSave(key, data);
+    });
+    traces.push({ eventId: 'first', type: 'agent_stage', runId, sessionId: 'unused', timestamp: 1,
+      summary: 'first', data: {} });
+    void journal.checkpoint();
+    for (let index = 0; index < 200; index++) {
+      traces.push({ eventId: `burst-${index}`, type: 'agent_stage', runId, sessionId: 'unused', timestamp: index + 2,
+        summary: 'progress', data: {} });
+      void journal.checkpoint();
+    }
+    release();
+    await journal.flush();
+    expect(save).toHaveBeenCalledTimes(2);
+    const saved = await persistence.load<{ traces: TraceEvent[] }>(`checkpoint-${runId}`, { traces: [] });
+    expect(saved.traces).toHaveLength(201);
+  });
   it('recovers the original task day in Shanghai after a restart on another day', async () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-14T16:30:00Z'));
     try {

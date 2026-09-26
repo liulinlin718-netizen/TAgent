@@ -157,14 +157,24 @@ export class WorkflowIndex {
     return state;
   }
   async append(scope: WorkflowTraceScope, event: WorkflowEvent) {
-    const snapshot = structuredClone(event);
+    return this.appendMany(scope, [event]);
+  }
+  async appendMany(scope: WorkflowTraceScope, events: WorkflowEvent[]) {
+    const snapshots = structuredClone(events);
     return this.serial(scope, async () => {
-      const state = await this.load(scope), buffer = this.line(scope, snapshot), previous = state.ids.get(snapshot.eventId);
-      if (previous) {
-        if (previous.hash !== hash(buffer)) throw new WorkflowIndexError('同一 Trace 事件不能被改写。', 409);
-        return;
+      const state = await this.load(scope), buffers: Buffer[] = [], entries: Offset[] = [];
+      const known = new Map(state.ids);
+      let offset = state.index.bytes;
+      for (const snapshot of snapshots) {
+        const buffer = this.line(scope, snapshot), digest = hash(buffer), previous = known.get(snapshot.eventId);
+        if (previous) {
+          if (previous.hash !== digest) throw new WorkflowIndexError('同一 Trace 事件不能被改写。', 409);
+          continue;
+        }
+        const entry: Offset = { id: snapshot.eventId, offset, length: buffer.length, hash: digest, type: snapshot.type, agentId: snapshot.agentId };
+        known.set(entry.id, entry); entries.push(entry); buffers.push(buffer); offset += buffer.length;
       }
-      await this.commit(state, [buffer], [{ id: snapshot.eventId, offset: state.index.bytes, length: buffer.length, hash: hash(buffer), type: snapshot.type, agentId: snapshot.agentId }]);
+      if (buffers.length) await this.commit(state, buffers, entries);
     }).catch(error => { this.states.delete(identity(scope)); throw error; });
   }
   async query(source: WorkflowSource, filter: { agentId?: string; type?: string; limit?: number; cursor?: string } = {}): Promise<WorkflowTracePage> {
@@ -213,19 +223,36 @@ export class WorkflowIndex {
 
 /** Index IO is derived work: bounded per run and never a precondition for model output or approval. */
 export class WorkflowIndexRecorder {
-  private pending = new Set<Promise<void>>();
+  private buffer: WorkflowEvent[] = [];
+  private pending?: Promise<void>;
+  private inFlight = 0;
+  private timer?: ReturnType<typeof setTimeout>;
   private failed = false;
   constructor(private readonly index: WorkflowIndex, private readonly scope: WorkflowTraceScope, private readonly onFailure: () => void) {}
   record(event: WorkflowEvent) {
     if (this.failed) return;
-    if (this.pending.size >= 32) { this.failed = true; this.onFailure(); return; }
-    const operation = this.index.append(this.scope, event).catch(() => {
-      if (!this.failed) { this.failed = true; this.onFailure(); }
-    });
-    this.pending.add(operation);
-    void operation.finally(() => this.pending.delete(operation));
+    if (this.buffer.length + this.inFlight >= 32) { this.failed = true; this.onFailure(); return; }
+    this.buffer.push(structuredClone(event));
+    if (!this.pending && !this.timer) this.timer = setTimeout(() => this.start(), 20);
   }
-  async flush() { await Promise.all([...this.pending]); }
+  private start() {
+    if (this.timer) { clearTimeout(this.timer); this.timer = undefined; }
+    if (this.pending || !this.buffer.length) return;
+    const batch = this.buffer.splice(0); this.inFlight = batch.length;
+    const operation = this.index.appendMany(this.scope, batch).catch(() => {
+      if (!this.failed) { this.failed = true; this.onFailure(); }
+    }).finally(() => {
+      this.pending = undefined; this.inFlight = 0;
+      if (this.buffer.length && !this.failed) this.timer = setTimeout(() => this.start(), 20);
+    });
+    this.pending = operation;
+  }
+  async flush() {
+    while (this.pending || this.buffer.length) {
+      if (!this.pending) this.start();
+      if (this.pending) await this.pending;
+    }
+  }
 }
 
 export async function removeWorkflowIndexes(index: WorkflowIndex, sources: WorkflowTraceScope[]): Promise<string[]> {

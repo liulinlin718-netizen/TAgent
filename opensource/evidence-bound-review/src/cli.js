@@ -2,6 +2,7 @@
 import { createReadStream, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { reviewReport, VERSION } from './index.js';
+import { ReviewInputError, fail, errorEnvelope } from './errors.js';
 
 const MAX_BYTES = 1024 * 1024;
 const safeLine = value => String(value).replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, ' ');
@@ -25,10 +26,14 @@ async function readBounded(stream) {
   try {
     for await (const chunk of stream) {
       length += chunk.length;
-      if (length > MAX_BYTES) throw new Error('JSON input exceeds 1 MiB.');
+      if (length > MAX_BYTES) fail('limit_exceeded', '', 'JSON input exceeds 1 MiB.');
       chunks.push(chunk);
     }
-    return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)); }
+    catch { fail('invalid_utf8', '', 'Input must use valid UTF-8 encoding.'); }
+  } catch (error) {
+    if (error instanceof ReviewInputError) throw error;
+    fail('input_not_readable', '', 'Could not read the input file or stream.');
   } finally { if (stream !== process.stdin) stream.destroy(); }
 }
 
@@ -38,22 +43,24 @@ export async function main(args = process.argv.slice(2)) {
     return 0;
   }
   if (args.length === 1 && args[0] === '--version') { console.log(VERSION); return 0; }
-  let file, json = false;
-  for (const arg of args) {
-    if (arg === '--json' && !json) json = true;
-    else if ((!arg.startsWith('-') || arg === '-') && file === undefined) file = arg;
-    else { console.error('Invalid arguments. Use --help.'); return 2; }
-  }
+  const json = args.includes('--json');
   try {
+    let file, seenJson = false;
+    for (const arg of args) {
+      if (arg === '--json' && !seenJson) seenJson = true;
+      else if ((!arg.startsWith('-') || arg === '-') && file === undefined) file = arg;
+      else fail('invalid_arguments', '', 'Invalid arguments. Use --help.');
+    }
     const text = await readBounded(file && file !== '-' ? createReadStream(file) : process.stdin);
     let input;
-    try { input = JSON.parse(text); } catch { throw new Error('Input must be valid UTF-8 JSON.'); }
+    try { input = JSON.parse(text); } catch { fail('invalid_json', '', 'Input must be valid JSON.'); }
     const result = reviewReport(input);
     console.log(json ? JSON.stringify(result, null, 2) : formatText(result));
     return result.status === 'issues_found' ? 1 : 0;
   } catch (error) {
     // Avoid exposing OS paths, upstream payloads or complete invalid documents.
-    console.error(error instanceof TypeError && !error.code ? error.message : 'Could not read or review input. Use bounded, valid UTF-8 JSON matching the documented schema.');
+    const envelope = errorEnvelope(error);
+    console.error(json ? JSON.stringify(envelope) : `${envelope.error.code}${envelope.error.path ? ` ${envelope.error.path}` : ''}: ${envelope.error.message}`);
     return 2;
   }
 }

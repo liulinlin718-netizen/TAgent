@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readTraceFile, createTraceIndex, modelForEvents, formatText, TraceInputError } from '../src/index.js';
+import { readTraceFile, createTraceIndex, analyzeCollectedTrace, formatText, TraceInputError } from '../src/index.js';
 import { terminalText } from '../src/format.js';
 
 const help = `Agent Trace Kit (offline, read-only)
@@ -57,20 +57,15 @@ export async function main(args, stdout = text => process.stdout.write(text), st
       stdout(options.json ? JSON.stringify(output, null, 2) + '\n'
         : `Validation: ${loaded.counts.accepted} accepted, ${loaded.counts.invalid} invalid, ${loaded.counts.conflictingIdentities} conflicting identities, ${loaded.issues.length} diagnostics.\n`);
     } else {
-      const index = createTraceIndex(loaded.events);
       if (options.command === 'events') {
+        const index = createTraceIndex(loaded);
         const page = index.query(options.filter, { offset: options.offset, limit: options.limit });
         output = { ...page, events: page.events.map(eventView), sourceCounts: loaded.counts, issues: loaded.issues };
         stdout(options.json ? JSON.stringify(output, null, 2) + '\n'
           : `Events ${page.offset}..${page.offset + page.events.length} of ${page.total}; next offset ${page.nextOffset ?? 'none'}\n`
             + page.events.map(event => `${terminalText(event.eventId)} | ${event.timestamp ?? 'time unknown'} | ${terminalText(event.type)} | ${terminalText(event.summary)}\n`).join(''));
       } else {
-        const selected = []; let offset = 0;
-        do { const page = index.query(options.filter, { offset, limit: 1000 }); selected.push(...page.events); offset = page.nextOffset; } while (offset !== null);
-        const model = modelForEvents(selected);
-        output = { version: 1, counts: loaded.counts, filtered: Object.keys(options.filter).length > 0,
-          selectedEventCount: selected.length, runs: model.runs, issues: [...loaded.issues, ...model.issues],
-          note: 'Outcomes are explicit producer claims, not verified task quality. Cost is only a recorded run total, not a bill. JSONL is not tamper-proof audit evidence.' };
+        output = analyzeCollectedTrace(loaded, options.filter);
         stdout(options.json ? JSON.stringify(output, null, 2) + '\n' : formatText(output));
       }
     }

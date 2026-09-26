@@ -50,6 +50,25 @@ function fixture() {
 }
 
 describe('session-owned conversations', () => {
+  it('opens the recent page first and loads older UTF-8 messages without duplicates', async () => {
+    const all = Array.from({ length: 45 }, (_, index) => answer(`m-${index}`, `中文 🚀 ${index}`));
+    const request = vi.fn(async (url: string) => {
+      const parsed = new URL(url), end = Number(parsed.searchParams.get('before') ?? all.length);
+      const start = Math.max(0, end - 40);
+      return json({ session: session('a', all.slice(start, end)), nextBefore: start || null });
+    });
+    const store = createConversationStore(request, 'http://fixture.test');
+    const current = () => store.getState().entries[conversationKey('ws', 'a')]!;
+    await store.selectSession('ws', 'a');
+    expect(current().messages.map(item => item.id)).toEqual(all.slice(5).map(item => item.id));
+    expect(current().historyBefore).toBe(5);
+    await store.loadOlder('ws', 'a');
+    expect(current().messages.map(item => item.content)).toEqual(all.map(item => item.content));
+    expect(current().historyBefore).toBeNull();
+    await store.refreshSession('ws', 'a');
+    expect(current().messages.map(item => item.id)).toEqual(all.map(item => item.id));
+    expect(request).toHaveBeenCalledTimes(3);
+  });
   it('publishes bounded network batches without dropping events, order or the final report', async () => {
     const { store, get, channels, ack, done } = fixture();
     await store.selectSession('ws', 'a'); store.setDraft('ws', 'a', '长任务');

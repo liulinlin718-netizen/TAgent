@@ -89,7 +89,7 @@ export function normalizeEvent(input) {
   if (raw.agentSnapshot !== undefined) event.agentSnapshot = raw.agentSnapshot;
   if (errors.length) return { event: null, issues: [issue('invalid_event', 'error', `Invalid or conflicting fields: ${[...new Set(errors)].join(', ')}.`)] };
   if (event.timestamp === null) issues.push(issue('missing_timestamp', 'warning', 'Timestamp is unknown; no wall-clock time was invented.', { eventId: event.eventId }));
-  if (!event.runId) issues.push(issue('missing_run_id', 'warning', 'Run identity is unknown; tool calls will not be correlated.', { eventId: event.eventId }));
+  if (!event.runId) issues.push(issue('missing_run_id', 'warning', 'Run identity is unknown; relationships, tool pairs and aggregate outcomes cannot be established.', { eventId: event.eventId }));
   return { event, issues };
 }
 
@@ -108,27 +108,75 @@ export function stableJSON(value) {
   return `{${Object.keys(value).sort(compareText).map(key => `${JSON.stringify(key)}:${stableJSON(value[key])}`).join(',')}}`;
 }
 
+// Only library-owned batches may bypass normalization. Public views always return copies.
+const batches = new WeakMap();
+export function ownedTrace(value) { return batches.get(value); }
+
+function exposeTrace(snapshot) {
+  const view = {};
+  for (const key of ['events', 'issues', 'counts', 'evidence']) {
+    Object.defineProperty(view, key, { enumerable: true, get: () => structuredClone(snapshot[key]) });
+  }
+  batches.set(view, snapshot);
+  return Object.freeze(view);
+}
+
+function semanticEvent(event) {
+  const projected = { ...event };
+  if (event.data) {
+    const data = { ...event.data };
+    for (const name of [...identifiers, 'toolName', 'resultLength']) {
+      if (data[name] === event[name] || (name.startsWith('parent') && data[name] === null && event[name] === undefined)) delete data[name];
+    }
+    if (data.tool === event.toolName) delete data.tool;
+    if (data.toolCallId === event.callId) delete data.toolCallId;
+    if (Object.keys(data).length) projected.data = data; else delete projected.data;
+  }
+  return projected;
+}
+
+/** Internal collector: accepts freshly normalized records, never caller-controlled batches. */
+export function createCollector() {
+  const found = new Map(), signatures = new Map(), conflicts = new Set(), issues = [];
+  const evidence = [], firstSources = new Map();
+  let inputCount = 0, invalidCount = 0, duplicateCount = 0, bytes = 0;
+  return { add(normalized, location = {}) {
+    if (++inputCount > LIMITS.maxEvents) throw new TraceInputError('event_limit', 'Trace exceeds the event limit.');
+    const source = { ...location, inputIndex: inputCount - 1 };
+    const raw = normalized.event;
+    evidence.push({ source, event: raw });
+    issues.push(...normalized.issues.map(item => ({ ...item, ...source,
+      ...(raw ? { eventId: raw.eventId, runKey: scopeKey(raw) } : {}) })));
+    if (!raw) { invalidCount++; return; }
+    // Account for original metadata too, not just the smaller semantic fingerprint.
+    bytes += Buffer.byteLength(JSON.stringify(raw), 'utf8');
+    if (bytes > LIMITS.maxFileBytes) throw new TraceInputError('byte_limit', 'Trace exceeds the aggregate event byte limit.');
+    const event = semanticEvent(raw), key = eventKey(event), signature = stableJSON(event);
+    const variants = signatures.get(key);
+    if (!variants) {
+      signatures.set(key, new Set([signature])); found.set(key, event); firstSources.set(key, source);
+    } else if (variants.has(signature)) duplicateCount++;
+    else {
+      variants.add(signature);
+      if (!conflicts.has(key)) {
+        conflicts.add(key); found.delete(key);
+        issues.push(issue('conflicting_duplicate', 'error', 'Conflicting versions of the same event identity were excluded.',
+          { eventId: event.eventId, runKey: scopeKey(event), ...source, relatedSources: [firstSources.get(key)] }));
+      }
+    }
+  }, finish() {
+    const events = [...found.values()].sort(compareEvents);
+    return exposeTrace({ events, issues, evidence, counts: { input: inputCount, accepted: events.length, invalid: invalidCount,
+      duplicates: duplicateCount, conflictingIdentities: conflicts.size } });
+  } };
+}
+
 /** Conflicting identities quarantine all versions; neither first nor last version wins. */
 export function collectEvents(inputs) {
-  const found = new Map(), signatures = new Map(), conflicts = new Set(), issues = [];
-  let inputCount = 0, invalidCount = 0, duplicateCount = 0, bytes = 0;
+  if (!inputs || typeof inputs[Symbol.iterator] !== 'function') throw new TraceInputError('invalid_trace', 'Expected an iterable of raw events.');
+  const collector = createCollector();
   for (const input of inputs) {
-    if (++inputCount > LIMITS.maxEvents) throw new TraceInputError('event_limit', 'Trace exceeds the event limit.');
-    const normalized = normalizeEvent(input);
-    issues.push(...normalized.issues.map(item => ({ ...item, inputIndex: inputCount - 1 })));
-    if (!normalized.event) { invalidCount++; continue; }
-    const event = normalized.event, key = eventKey(event), signature = stableJSON(event);
-    bytes += Buffer.byteLength(signature, 'utf8');
-    if (bytes > LIMITS.maxFileBytes) throw new TraceInputError('byte_limit', 'Trace exceeds the aggregate event byte limit.');
-    if (!signatures.has(key)) { signatures.set(key, signature); found.set(key, event); }
-    else if (signatures.get(key) === signature) duplicateCount++;
-    else if (!conflicts.has(key)) {
-      conflicts.add(key); found.delete(key);
-      issues.push(issue('conflicting_duplicate', 'error', 'Conflicting versions of the same event identity were excluded.',
-        { eventId: event.eventId, runKey: scopeKey(event), inputIndex: inputCount - 1 }));
-    }
+    collector.add(normalizeEvent(input));
   }
-  const events = [...found.values()].sort(compareEvents);
-  return { events, issues, counts: { input: inputCount, accepted: events.length, invalid: invalidCount,
-    duplicates: duplicateCount, conflictingIdentities: conflicts.size } };
+  return collector.finish();
 }

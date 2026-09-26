@@ -437,7 +437,7 @@ app.route('/api/data/import', createTableImportRoutes());
 // ─── Workspace API ───────────────────────────────────
 
 app.get('/api/workspaces', (c) => {
-  return c.json({ workspaces: store.listWorkspaces() });
+  return c.json({ workspaces: c.req.query('view') === 'navigation' ? store.listWorkspaceSummaries() : store.listWorkspaces() });
 });
 
 app.post('/api/workspaces', async (c) => {
@@ -466,7 +466,9 @@ app.delete('/api/workspaces/:wsId', async (c) => {
 // ─── Session API ─────────────────────────────────────
 
 app.get('/api/workspaces/:wsId/sessions', (c) => {
-  return c.json({ sessions: store.listSessions(c.req.param('wsId')) });
+  return c.json({ sessions: c.req.query('view') === 'navigation'
+    ? store.listWorkspaceSummaries().find(item => item.id === c.req.param('wsId'))?.sessions || []
+    : store.listSessions(c.req.param('wsId')) });
 });
 
 app.post('/api/workspaces/:wsId/sessions', async (c) => {
@@ -501,6 +503,21 @@ app.get('/api/workspaces/:wsId/sessions/tree', (c) => {
 });
 
 app.get('/api/workspaces/:wsId/sessions/:sessId', (c) => {
+  if (c.req.query('view') === 'recent') {
+    const limitText = c.req.query('limit') || '40', beforeText = c.req.query('before');
+    if (!/^\d+$/.test(limitText) || (beforeText !== undefined && !/^\d+$/.test(beforeText))) {
+      return c.json({ error: 'Invalid session page cursor or limit' }, 400);
+    }
+    try {
+      const page = store.getSessionPage(c.req.param('wsId'), c.req.param('sessId'), Number(limitText),
+        beforeText === undefined ? undefined : Number(beforeText));
+      if (!page) return c.json({ error: 'Session not found' }, 404);
+      return c.json(page);
+    } catch (error) {
+      if (error instanceof RangeError) return c.json({ error: error.message }, 400);
+      throw error;
+    }
+  }
   const session = store.getSession(c.req.param('wsId'), c.req.param('sessId'));
   if (!session) return c.json({ error: 'Session not found' }, 404);
   return c.json(session);
@@ -966,6 +983,7 @@ app.post('/api/discovery/search', async (c) => {
     query,
     skillsRegistry,
     mcpRegistry,
+    signal: c.req.raw.signal,
   });
   return c.json(result);
 });
@@ -986,6 +1004,7 @@ app.post('/api/skills/search', async (c) => {
     query: keyword,
     skillsRegistry,
     mcpRegistry,
+    signal: c.req.raw.signal,
   });
   return c.json(result);
 });
@@ -1127,6 +1146,7 @@ app.post('/api/mcp/search', async (c) => {
     query: keyword,
     skillsRegistry,
     mcpRegistry,
+    signal: c.req.raw.signal,
   });
   return c.json(result);
 });

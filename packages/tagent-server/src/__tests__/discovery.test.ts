@@ -98,6 +98,27 @@ describe('discovery search', () => {
     await runDiscoverySearch({ domain: 'mcp', query: 'filesystem', skillsRegistry, mcpRegistry });
     expect(fetcher.mock.calls.filter(([url]) => String(url).includes('api.github.com'))).toHaveLength(1);
   });
+  it('keeps a fast npm result when a slow GitHub request is cancelled', async () => {
+    const controller = new AbortController();
+    const fetcher = vi.fn((input: URL | string, init?: RequestInit): Promise<Response> => {
+      if (!String(input).includes('api.github.com')) return Promise.resolve(jsonResponse({
+        objects: [{ package: { name: 'filesystem-mcp-server', description: 'Filesystem MCP server' } }], servers: [],
+      }));
+      return new Promise((_, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+      });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const pending = runDiscoverySearch({ domain: 'mcp', query: 'filesystem', skillsRegistry, mcpRegistry,
+      signal: controller.signal });
+    await vi.waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes('registry.npmjs.org'))).toBe(true));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    controller.abort();
+    const result = await pending;
+    expect(result.candidates.some(candidate => candidate.providerId === 'npm')).toBe(true);
+    expect(result.providers['github-repo']).toBe('failed');
+    expect(result.candidates.every(candidate => !('command' in candidate))).toBe(true);
+  });
 
   it('returns a real reset time and keeps other providers usable during GitHub limits', async () => {
     const reset = Math.ceil(Date.now() / 1000) + 120;

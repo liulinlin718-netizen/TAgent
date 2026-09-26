@@ -11,7 +11,7 @@
   "exports": { ".": { "types": "./src/index.d.ts", "import": "./src/index.js" } },
   "types": "./src/index.d.ts",
   "bin": { "agent-trace": "./bin/agent-trace.js" },
-  "files": ["src", "bin", "examples", "README.md", "LICENSE", "NOTICE"],
+  "files": ["src", "bin", "examples", "README.md", "README_EN.md", "LICENSE", "NOTICE"],
   "scripts": {
     "test": "node --test test/*.test.js",
     "demo": "node bin/agent-trace.js summary examples/research.jsonl",

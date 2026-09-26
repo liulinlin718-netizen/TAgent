@@ -400,6 +400,19 @@
   gap: var(--space-8);
 }
 
+.loadHistory {
+  align-self: center;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  padding: 7px 14px;
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.loadHistory:hover { color: var(--color-text-primary); border-color: var(--color-text-secondary); }
+.loadHistory:disabled { cursor: default; opacity: .6; }
+.loadHistory:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+
 .agentTaskButton { display: flex; align-items: center; gap: 8px; }
 .agentTaskButton svg { flex-shrink: 0; }
 .agentTaskButton:disabled { cursor: default; opacity: .5; }

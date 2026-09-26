@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { executeTaskPlan, normalizeTaskPlan } from '../task-plan.js';
 
 describe('task dependency handoffs', () => {
@@ -42,5 +42,37 @@ describe('task dependency handoffs', () => {
     release();
     await result;
     expect(started).toEqual(['a', 'b', 'c']);
+  });
+  it('starts a dependent task as soon as its parent finishes and a slot opens', async () => {
+    const tasks = [
+      { id: 'fast', agentRole: 'research', objective: 'A' },
+      { id: 'slow', agentRole: 'research', objective: 'B' },
+      { id: 'child', agentRole: 'document', objective: 'C', dependsOn: ['fast'] },
+    ];
+    let releaseFast!: () => void;
+    let releaseSlow!: () => void;
+    const fast = new Promise<void>(resolve => { releaseFast = resolve; });
+    const slow = new Promise<void>(resolve => { releaseSlow = resolve; });
+    const started: string[] = [];
+    const completed = executeTaskPlan(tasks, async (task, dependencies: string[]) => {
+      started.push(task.id);
+      if (task.id === 'fast') await fast;
+      if (task.id === 'slow') await slow;
+      if (task.id === 'child') expect(dependencies).toEqual(['fast']);
+      return task.id;
+    });
+    expect(started).toEqual(['fast', 'slow']);
+    releaseFast();
+    await vi.waitFor(() => expect(started).toContain('child'));
+    releaseSlow();
+    await completed;
+  });
+  it('does not report completion when cancellation arrives with the final child result', async () => {
+    const controller = new AbortController();
+    const tasks = normalizeTaskPlan([{ id: 'only', agentRole: 'research', objective: 'Collect' }], 'Topic');
+    await expect(executeTaskPlan(tasks, async () => {
+      controller.abort();
+      return 'collected';
+    }, controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
   });
 });

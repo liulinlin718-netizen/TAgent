@@ -1,6 +1,6 @@
 {
   "name": "evidence-bound-review",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Offline, evidence-linked checks for narrow office report constraints. Not a general fact checker.",
   "type": "module",
   "license": "MIT",
@@ -14,7 +14,7 @@
   "exports": { ".": { "types": "./src/index.d.ts", "import": "./src/index.js" } },
   "types": "./src/index.d.ts",
   "bin": { "evidence-bound-review": "./src/cli.js" },
-  "files": ["src", "examples", "README.md", "LICENSE", "NOTICE"],
+  "files": ["src", "examples", "README.md", "README_EN.md", "LICENSE", "NOTICE"],
   "scripts": {
     "test": "node --test",
     "demo": "node src/cli.js examples/project.json",
