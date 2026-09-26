@@ -14,6 +14,20 @@ TAgent is not a collection of prompts hidden behind a chat box. Its purpose is t
 - Skill and MCP discovery, preview, risk review, saving, and execution authorization are separate operations.
 - Failures, cancellation, and insufficient budget preserve completed material and return a readable outcome instead of pretending success.
 
+## Why TAgent
+
+Office work rarely maps to a single question and answer. Reports need research, spreadsheets need a defined methodology, and presentations need decision-oriented messages rather than a wall of text. TAgent assigns these responsibilities to different agents, then brings the process and deliverable back into one workspace.
+
+| Your goal | How agents collaborate | What you receive |
+| --- | --- | --- |
+| Research an industry or recent trend | Research gathers and reads sources; Document organizes the report | A report with dates, source links, conclusions, and evidence gaps |
+| Turn business data into a brief | Data checks metrics; Document explains results and material limits | A structured brief, statistical tables, and supported downloadable output |
+| Prepare a management presentation | Document organizes material; Presentation develops the narrative | Slide titles, key messages, evidence, and chart suggestions |
+| Plan a project and communicate it | Project identifies dependencies and ownership gaps; Communication drafts messages | Schedule suggestions, action items, and editable communication drafts |
+| Reuse an office procedure | Save it as a Skill and bind it to the appropriate agents | Reusable SOPs, templates, and checks |
+
+These are example workflows, not a requirement to run every agent. Participants depend on the task, dependencies, permissions, and budget. Missing material is identified rather than replaced with invented facts.
+
 ## Interface Tour
 
 ### From a Task to a Readable Deliverable
@@ -51,15 +65,68 @@ Each role uses a structured Agent Card containing its soul, responsibility bound
 
 Complex plans may create controlled task agents. A child inherits and narrows the parent's capabilities and budget, records its parent relationship and trace, and becomes a resident agent only after explicit user confirmation.
 
+### Multi-Agent Writing
+
+There is no need to draw a workflow first or move material between several chat windows. For a request such as “research recent industry changes, write a management report, and prepare a presentation outline,” the Orchestrator can assign source gathering, data checks, writing, and presentation work to appropriate agents.
+
+- **Prepare material before writing:** independent research and data tasks can run concurrently; dependent writing starts when its inputs are ready.
+- **Handoff includes evidence and limits:** downstream agents receive upstream results and caveats, rather than treating search snippets or model guesses as verified facts.
+- **Synthesis is more than concatenation:** results are organized into a readable deliverable with sources, open questions, and recorded quality checks.
+- **Keep working on the result:** request revisions in the same session or use Fork to compare writing directions. Finished responses can be downloaded as editable Word documents; supported calculation results have separate Excel downloads.
+
+```mermaid
+flowchart TD
+    U[Task: industry report and presentation outline] --> O[Orchestrator: goals and dependencies]
+    O --> R[Research: sources and evidence]
+    O --> D[Data: metrics and methodology]
+    R --> E[Handoff: results, evidence, and limits]
+    D --> E
+    E --> W[Document: summary, analysis, risks, recommendations]
+    W --> P[Presentation: slide titles, messages, chart suggestions]
+    W --> S[Synthesis and quality checks]
+    P --> S
+    S --> F[One structured deliverable, ready for revision]
+```
+
+*This diagram explains one possible division of work, not a mandatory execution sequence. The Presentation agent produces a slide-level outline; this does not imply automatic PPT file generation.*
+
 ### Visual Workflow
 
 The resizable Workflow Drawer sits beside the conversation and provides three views derived from the same `WorkflowEvent` stream:
 
-- **Live flow** groups decomposition, dispatch, research, tools, governance, and synthesis into readable stages.
-- **Architecture** shows only the agents, tools, MCP servers, and governance nodes involved in the selected run, with relationship edges visible by default.
-- **Event log** supports filtering and paginated inspection by run, agent, and event type.
+| View | What it shows | What it helps you understand |
+| --- | --- | --- |
+| Live flow | Scrollable groups for decomposition, dispatch, research, tools, governance, and synthesis | Current activity, returned tool results, and pending approval |
+| Architecture | Agent cards, parent-child links, dependencies, tools/MCP, governance, and synthesis for this run | Who owns each part, who depends on whom, and which execution instances contributed |
+| Event log | Original event order, timestamps, agents, tools, result lengths, and recorded costs | What happened, and where failure or fallback occurred |
 
-The shared event model also drives history, governance records, and trace-aware agent evaluation, preventing each screen from inventing a different execution story.
+Agent cards expose recorded roles, input/output summaries, Skills, tool permissions, and quality rules. Directional relationship edges are visible by default, with animated connections, overview, zoom, and node navigation. You do not need to select an agent to reveal its edges. Only participants in the selected task appear, rather than the entire Agent Hall.
+
+![TAgent workflow architecture with Data and Document agent cards, handoff dependencies, a tool node, and governance relationships](./docs/media/workflow-architecture.png)
+
+*Actual UI with the synthetic revenue task: checked data is handed to the Document agent. Connections explain dispatch, dependencies, and tool relationships; they are not independent factual certification of the material.*
+
+All three views consume the same `WorkflowEvent` records. Live flow organizes them by category, while the log preserves their original order. The shared model also supports history, governance records, and trace-aware evaluation.
+
+### Visual Binding and Plugin-Style Extension
+
+Agents, Skills, and MCP answer different questions: **who does the work**, **how it is done**, and **which tools it uses**.
+
+| Object | Purpose | How you configure it |
+| --- | --- | --- |
+| Agent | Office role, execution strategy, quality standard, and permission boundaries | Use a resident role or create/edit an Agent Card |
+| Skill | Reusable procedures, documents, templates, and checks | Search the right-side library and drag onto an agent card, or select in the editor |
+| MCP | Protocol connections to external tools or data services | Preview and save in MCP management, then select bindings and call permissions in the Agent editor |
+
+The Agent Hall keeps the Skills library separate from the agent cards. Drag a local Skill onto its target to submit a binding without editing configuration files. A failed save is reported; a completed drag animation is not treated as successful persistence.
+
+MCP **binding** and **permission to call** are separate controls. Attaching a service does not authorize it; stdio services also require independent execution approval. Tools recommended by a Skill cannot bypass the agent's allowlist.
+
+![TAgent Agent Builder with Skill selection, attached-file read permission, and separate MCP binding and call permission controls](./docs/media/agent-bindings.png)
+
+*Unsaved UI configuration example. The demonstration service is not connected to an external system. Binding is selected while call permission remains unselected.*
+
+TAgent provides plugin-style extension through Skill packages and MCP services, independent of a host such as Codex. It supports **Skill drag-and-drop binding** and **MCP form-based binding**, not host plugin installation or a separate general-purpose plugin marketplace.
 
 ### Skill Packages
 
@@ -73,7 +140,39 @@ A Skill is a reusable capability package, not just a prompt file. It may contain
 - examples and minimal tests
 - risk level and version information
 
-The management UI presents a simple editor for everyday users and reveals advanced fields only when needed. Skills can be authored locally or imported through a review flow from GitHub and other URLs. Search and preview never silently save or execute remote content.
+The editor organizes these fields visually rather than requiring manifest JSON. SOPs, references, and checklists can be separate documents, while inputs, outputs, examples, and tests have their own fields without duplicate entry. Imported source snapshots and attached files can be expanded for inspection. A script or binary attachment does not grant execution permission.
+
+### Build a Skill Quickly
+
+For a reusable “revenue table to business brief” Skill:
+
+1. Open `/management/skills`, choose **New Skill**, and specify its name, purpose, and triggers.
+2. Write an SOP in the document package; add references or a delivery checklist when useful.
+3. Define inputs and outputs, such as “revenue table and units → summary, statistical table, missing information, action suggestions.” Select only necessary tools.
+4. Add an example and a minimal test, review and save, then drag the Skill onto the appropriate Document or Data agent.
+
+![TAgent Skill editor with a revenue-brief SOP, a separate delivery checklist, and tool dependencies](./docs/media/skill-builder.png)
+
+*Hand-written draft in the actual editor; not saved and no model was called. Minimal tests perform static checks, not real-task quality evaluation.*
+
+Two other entry points remain separate:
+
+- **AI draft:** describe a reusable task, explicitly generate a draft, then edit and confirm. This requires a configured model and may incur API costs.
+- **Import an existing Skill:** find a candidate or paste a GitHub / `SKILL.md` URL, select the Skill within its package, inspect source files and risks, then confirm saving.
+
+```mermaid
+flowchart LR
+    A[Create manually] --> E[Edit capability package]
+    B[Explicitly generate AI draft] --> E
+    C[Search or paste URL] --> P[Select Skill and preview import]
+    P --> R[Inspect source, files, and risk]
+    R --> E
+    E --> S[User confirms saving]
+    S --> H[Drag and bind to an agent]
+    H --> T[Use within tool permissions]
+```
+
+Search discovers candidates; preview reads candidates. Neither silently creates, saves, or executes external content. Reading attached package files also requires permission; installing a Skill is not a shortcut around tool restrictions.
 
 ### MCP Management
 
@@ -194,6 +293,18 @@ General development mode:
 ```bash
 pnpm dev
 ```
+
+### First Use
+
+| Entry point | Suggested action |
+| --- | --- |
+| Workspace `/` | Describe the goal, audience, time window, and material; for example, “turn this revenue table into a management brief and list missing information separately” |
+| Workflow panel | Check live progress, inspect division of work in Architecture, and consult the event log for unexpected outcomes |
+| Agent Hall `/management/agents` | Choose a resident role and drag in a Skill; edit the agent when binding MCP and setting permissions |
+| Skills `/management/skills` | Start with one familiar office procedure, or import a reviewed capability package |
+| MCP `/management/mcp` | Discover, preview risk, and save configuration; authorize access before agent use |
+
+Built-in office capabilities do not require additional MCP services. Start with a small task and clear deliverable requirements, then add Skills and external services as needed. Configuring capabilities does not automatically authorize high-impact actions such as sending email or executing external commands.
 
 ### Engineering Checks
 

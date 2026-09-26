@@ -8,10 +8,17 @@ These are screenshots of the actual TAgent Web UI, rendered locally with public 
 | --- | --- |
 | `workspace.png` | Three-column conversation and workflow / 三栏对话与工作流 |
 | `agent-hall.png` | Built-in Agent Cards, estimated scores and Skill binding / 内置角色、静态评分与 Skill 绑定 |
+| `workflow-architecture.png` | Two-agent handoff, dependency edges, tool and governance nodes / 双 Agent 交接、依赖边、工具与治理节点 |
+| `agent-bindings.png` | Skill selection and separate MCP binding/call permissions / Skill 勾选与独立 MCP 绑定、调用权限 |
+| `skill-builder.png` | Unsaved manual Skill draft with SOP and checklist / 未保存的手工 Skill 草稿，含 SOP 与检查清单 |
 
 The revenue brief and workflow events are display fixtures, not results of an executed model task. Agent Cards and Skill names come from the built-in definitions. Scores are explicitly static estimates. API requests are intercepted; no live backend, model, external search or mailbox is accessed.
 
 营收简报与工作流事件仅为界面示例，并非已执行的模型任务。Agent Card 与 Skill 名称取自内置定义；评分明确为静态估算。截图脚本拦截 API，不连接真实后端、不调用模型、搜索或邮箱。
+
+The extra binding and editor views use the real UI controls with unsaved changes. The MCP service is a synthetic display entry with no endpoint. The hand-written revenue Skill is not saved. Every non-GET API request is blocked. Diagram arrows explain capability and dependency relationships, not verified execution or factual certification.
+
+挂载与编辑截图操作真实 UI 控件，但修改均未保存。MCP 服务只是没有端点的合成展示项，手工营收 Skill 没有落盘。所有非 GET API 请求均被阻止。流程图表达能力或依赖关系，不是执行回执或事实认证。
 
 ## Reproduce / 复现
 

@@ -61,7 +61,8 @@ const session = { id: sessionId, title: '营收简报 · 合成示例', creation
     { id: 'readme-user', role: 'user', content: '请把这份三个月营收整理为简报：1 月 100 万元，2 月 120 万元，3 月 100 万元。说明材料边界，并给出下月行动建议。', traces: [] },
     { id: 'readme-answer', role: 'assistant', content: output, traces, run: { id: runId, status: 'finished' } },
   ] };
-const fixture = { agents, skills: DEFAULT_RESIDENT_SKILLS.map(({ id, name, category, description }) => ({ id, name, category, description })),
+const fixture = { agents, skills: DEFAULT_RESIDENT_SKILLS.map(skill => ({ ...skill, createdAt: timestamp, updatedAt: timestamp })),
+  mcpServers: [{ id: 'readme-reference-mcp', name: '资料检索 · 演示服务', type: 'http', toolName: 'mcp_readme_reference', executionApproved: false }],
   benchmarks: Object.fromEntries(agents.map(agent => [agent.id, { profile: estimateAgentBenchmarkProfile(agent) }])),
   session, workspace: { id: 'readme-workspace', name: '办公协作示例', description: '仅含合成数据', residentAgents: agents.map(agent => agent.id), sessions: [session] } };
 await mkdir('output/playwright', { recursive: true });
